@@ -1,0 +1,37 @@
+Install/Compile
+
+GENERIC STEP BY STEP
+1)Download the source distribution NAMD_2.7b2_Source.tar.gz from the NAMD website
+2)Download the patch NAMD_2.7b2_Source_psfgen_patch.2009-11-18
+3)patch NAMD source
+4)read notes.txt and understand the installation instructions for NAMD
+5)Compile NAMD, this will leave you with the desired version of psfgen
+
+SPECIFIC CASE OSX 1.6.2 / SNOW LEOPARD
+1)wget tcl8.4.19-src.tar.gz
+2)tar -xzf tcl8.4.19-src.tar.gz
+3)cd tcl8.4.19/unix
+4)./configure --prefix=/sw --enable-64bit
+5)make
+6)sudo make install
+
+1)wget www.fftw.org/fftw-2.1.5.tar.gz
+2)tar -xzf fftw-2.1.5.tar.gz
+3)cd fftw-2.1.5 
+4)./configure --prefix=/sw --enable-float --enable-type-prefix
+5)make
+6)sudo make install
+
+1)tar -xzf NAMD_2.7b2_Source.tar.gz
+2)patch -p0 < NAMD_2.7b2_Source_psfgen_patch.2009-11-18
+3)cd NAMD_2.7b2_Source
+4)tar -xf charm-6.1.3.tar
+5)cd charm-6.1.3
+6)./build charm++ net-darwin-x86_64 --no-build-shared -O -DCMK_OPTIMIZE=1
+7)cd ..
+8)Edit arch/MacOSX-x86_64-g++.arch and remove the -Wno-long-double from options
+9) Edit arch/MacOSX-x86_64.fftw: FFTDIR=/sw
+10) Edit arch/MacOSX-x86_64.tcl: TCLDIR=/sw , TCLLIB=-L$(TCLDIR)/lib -ltcl8.4
+11) ./config MacOSX-x86_64-g++ --charm-arch net-darwin-x86_64
+12) cd MacOSX-x86_64-g++
+13) make
