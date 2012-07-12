@@ -1,0 +1,446 @@
+**********************************************************************
+* CHARMM27 Carbohydrate topology file (CSFF_top.inp)
+*    for pyranose simulations
+* Michelle Kuttel, J. W. Brady and Kevin J. Naidoo
+* Aug/Sep 2001
+* Modified from the PHLB (Palma-Himmel-Liang-Brady) force field parameters:
+*     added CPS atom type and altered primary alcohol
+*     dihedral force constants from CTS values 
+*     to lower energy the barriers to primary alcohol rotation
+* Comments to Kevin J. Naidoo email:knaidoo,science.uct.ac.za
+****************************************************************
+*
+22    1
+! 
+!references
+!
+! M. Kuttel and J. W. Brady and K. J. Naidoo. "Carbohydrate Solution
+! Simulations: Producing a Force Field with Experimentally Consistent
+! Primary Alcohol Rotational Frequencies and Populations",
+! J. Comput. Chem., 2002,23:1236-1243
+!
+!PHLB force field precursor
+!
+!R. Palma and M. E. Himmel and G. Liang and J. W. Brady. "Molecular
+!Mechanics Studies of Cellulases" in "Glycosyl Hydrolases in Biomass
+!Conversion: ACS Symposium Series", published by ACS, 2001, editor
+!M. E. Himmel
+!
+!HBFB force field precursor
+!
+!S. N. Ha and A. Giammona and M. Field and J. W. Brady, "A revised
+!potential-energy surface for molecular studies of carbohydrates",
+!Carbohydr. Res., 1988,180,207-221
+
+MASS     4 HT     1.00800 ! TIP3P water hydrogen
+MASS    56 OT    15.99940 ! TIP3P water oxygen
+MASS    60 OSPC  15.99940 ! SPC water oxygen
+MASS    61 HSPC   1.00800 ! SPC water hydrogen
+MASS    73 HAS    1.00800 ! sugar aliphatic hydrogen
+MASS    74 HOS    1.00800 ! sugar hydroxyl hydrogen
+MASS    75 CTS   12.01100 ! sugar aliphatic carbon
+MASS    76 OHS   15.99940 ! sugar hydroxy oxygen
+MASS    78 CBS   12.01100 ! C1 in beta sugars     
+MASS    79 CPS   12.01100 ! primary alcohol carbon (CT3)
+MASS    77 OES   15.99940 ! sugar ring oxygen
+
+AUTOGENERATE angles dihedrals
+! DEFAULTS for patching FIRST residue (with NTER) and LAST (with CTER)
+DEFA FIRS NTER LAST CTER
+
+!#############################################################################
+!
+!                           CARBOHYDRATE
+!
+!#############################################################################
+
+!___________________________ Residues _______________________________________
+
+RESI AGLC    0.00000     ! 4C1 alpha-D-glucopyranose monomer
+GROU                     ! 
+ATOM C1   CTS     0.200  !          H61
+ATOM H1   HAS     0.090  !          |
+ATOM O1   OHS    -0.660  !      H62-C6-O6-HO6
+ATOM HO1  HOS     0.430  !          |
+ATOM C5   CTS     0.250  !      H4  C5--O5   O1-HO1
+ATOM H5   HAS     0.090  !       \ / \   \  /
+ATOM O5   OES    -0.400  ! HO4-O4-C4  H5  C1-H1
+GROU                     !         \     / 
+ATOM C2   CTS     0.140  !       H3-C3--C2-O2-HO2	
+ATOM H2   HAS     0.090  !          |   |
+ATOM O2   OHS    -0.660  !          O3  H2
+ATOM HO2  HOS     0.430  !          | 
+GROU                     !          HO3
+ATOM C3   CTS     0.140  !
+ATOM H3   HAS     0.090  !
+ATOM O3   OHS    -0.660  !
+ATOM HO3  HOS     0.430  !
+GROU                     !
+ATOM C4   CTS     0.140  !
+ATOM H4   HAS     0.090  !
+ATOM O4   OHS    -0.660  !
+ATOM HO4  HOS     0.430  !
+GROU                     !
+ATOM C6   CPS     0.050  !
+ATOM H61  HAS     0.090  !
+ATOM H62  HAS     0.090  !
+ATOM O6   OHS    -0.660  !
+ATOM HO6  HOS     0.430  !
+BOND C1   O1        C1   H1        O1   HO1       C1   O5        C1   C2
+BOND C2   H2        C2   O2        O2   HO2       C2   C3        C3   H3 
+BOND C3   O3        O3   HO3       C3   C4        C4   H4        C4   O4 
+BOND O4   HO4       C4   C5        C5   H5        C5   C6        C6   H61 
+BOND C6   H62       C6   O6        O6   HO6       C5   O5 
+DONO HO1 O1
+DONO HO2 O2
+DONO HO3 O3
+DONO HO4 O4
+DONO HO6 O6
+ACCE O1
+ACCE O2
+ACCE O3
+ACCE O4
+ACCE O5
+ACCE O6
+!    I    J    K    L      R(IK)   T(IKJ)    PHI   T(JKL)   R(KL)
+IC   O1   C2  *C1   H1     1.3889  109.35 -122.69  108.98   1.0950 
+IC   O1   O5  *C1   C2     1.3889  111.55 -121.57  110.06   1.5340
+IC   O2   C3  *C2   H2     1.4154  112.27 -118.21  108.23   1.0919
+IC   O2   C1  *C2   C3     1.4154  110.87 -125.56  111.08   1.5253
+IC   O3   C4  *C3   H3     1.4157  110.61  120.65  108.81   1.1068
+IC   O3   C2  *C3   C4     1.4157  108.09  120.77  109.86   1.5177
+IC   O4   C5  *C4   H4     1.4252  110.90 -120.61  108.35   1.1024 
+IC   O4   C3  *C4   C5     1.4252  108.31 -122.08  111.17   1.5287
+IC   C6   O5  *C5   H5     1.5099  108.10  118.69  109.65   1.1042
+IC   C6   C4  *C5   O5     1.5099  111.57  119.10  108.69   1.4274
+IC   O6   H62 *C6   H61    1.4132  110.47 -120.32  107.85   1.0945
+IC   O6   C5  *C6   H62    1.4132  110.45 -121.53  108.99   1.0959
+IC   O5   C1   C2   C3     1.4254  110.06   54.09  111.08   1.5253
+IC   C1   C2   C3   C4     1.5340  111.08  -51.23  109.86   1.5177
+IC   C2   C3   C4   C5     1.5253  109.86   53.25  111.17   1.5288
+IC   C3   C4   C5   O5     1.5177  111.17  -57.46  108.69   1.4274
+IC   C4   C5   O5   C1     1.5288  108.69   62.25  113.77   1.4254
+IC   C5   O5   C1   C2     1.4274  113.77  -60.97  110.06   1.5340
+IC   C4   C5   C6   O6     1.5287  111.57 -170.28  110.45   1.4132 
+IC   O5   C1   O1   HO1    1.4254  111.55   74.87  107.83   0.9684
+IC   C1   C2   O2   HO2    1.5340  110.87 -100.51  112.13   0.9638
+IC   C2   C3   O3   HO3    1.5253  108.09 -165.88  112.08   0.9730
+IC   C3   C4   O4   HO4    1.5177  108.31  134.18  106.97   0.9713
+IC   C5   C6   O6   HO6    1.5099  110.44 -143.88  107.72   0.9641
+PATC FIRS NONE LAST NONE
+
+
+RESI GLDO    0.00000     ! 4C1 6-deoxygenated alpha-D-glucopyranose monomer  
+GROU                     ! 
+ATOM C1   CTS     0.200  !          H61
+ATOM H1   HAS     0.090  !          |
+ATOM O1   OHS    -0.660  !      H62-C6-H63
+ATOM HO1  HOS     0.430  !          |
+ATOM C5   CTS     0.250  !      H4  C5--O5   O1-HO1
+ATOM H5   HAS     0.090  !       \ / \   \  /
+ATOM O5   OES    -0.400  ! HO4-O4-C4  H5  C1-H1
+GROU                     !         \     / 
+ATOM C2   CTS     0.140  !       H3-C3--C2-O2-HO2	
+ATOM H2   HAS     0.090  !          |   |
+ATOM O2   OHS    -0.660  !          O3  H2
+ATOM HO2  HOS     0.430  !          | 
+GROU                     !          HO3
+ATOM C3   CTS     0.140
+ATOM H3   HAS     0.090
+ATOM O3   OHS    -0.660
+ATOM HO3  HOS     0.430
+GROU
+ATOM C4   CTS     0.140
+ATOM H4   HAS     0.090
+ATOM O4   OHS    -0.660
+ATOM HO4  HOS     0.430
+GROU
+ATOM C6   CPS    -0.270
+ATOM H61  HAS     0.090
+ATOM H62  HAS     0.090
+ATOM H63  HAS     0.090
+BOND C1   O1        C1   H1        O1   HO1       C1   O5        C1   C2
+BOND C2   H2        C2   O2        O2   HO2       C2   C3        C3   H3 
+BOND C3   O3        O3   HO3       C3   C4        C4   H4        C4   O4 
+BOND O4   HO4       C4   C5        C5   H5        C5   C6        C6   H61 
+BOND C6   H62       C6   H63       C5   O5 
+DONO HO1 O1
+DONO HO2 O2
+DONO HO3 O3
+DONO HO4 O4
+ACCE O1
+ACCE O2
+ACCE O3
+ACCE O4
+ACCE O5
+!    I    J    K    L      R(IK)   T(IKJ)    PHI   T(JKL)   R(KL)
+IC   O1   C2  *C1   H1     1.3889  109.35 -122.69  108.98   1.0950 
+IC   O1   O5  *C1   C2     1.3889  111.55 -121.57  110.06   1.5340
+IC   O2   C3  *C2   H2     1.4154  112.27 -118.21  108.23   1.0919
+IC   O2   C1  *C2   C3     1.4154  110.87 -125.56  111.08   1.5253
+IC   O3   C4  *C3   H3     1.4157  110.61  120.65  108.81   1.1068
+IC   O3   C2  *C3   C4     1.4157  108.09  120.77  109.86   1.5177
+IC   O4   C5  *C4   H4     1.4252  110.90 -120.61  108.35   1.1024 
+IC   O4   C3  *C4   C5     1.4252  108.31 -122.08  111.17   1.5287
+IC   C6   O5  *C5   H5     1.5099  108.10  118.69  109.65   1.1042
+IC   C6   C4  *C5   O5     1.5099  111.57  119.10  108.69   1.4274
+IC   H63  H62 *C6   H61    1.4132  110.47 -120.32  107.85   1.0945
+IC   H63  C5  *C6   H62    1.4132  110.45 -121.53  108.99   1.0959
+IC   O5   C1   C2   C3     1.4254  110.06   54.09  111.08   1.5253
+IC   C1   C2   C3   C4     1.5340  111.08  -51.23  109.86   1.5177
+IC   C2   C3   C4   C5     1.5253  109.86   53.25  111.17   1.5288
+IC   C3   C4   C5   O5     1.5177  111.17  -57.46  108.69   1.4274
+IC   C4   C5   O5   C1     1.5288  108.69   62.25  113.77   1.4254
+IC   C5   O5   C1   C2     1.4274  113.77  -60.97  110.06   1.5340
+IC   C4   C5   C6   H63    1.5287  111.57 -170.28  110.45   1.4132 
+IC   O5   C1   O1   HO1    1.4254  111.55   74.87  107.83   0.9684
+IC   C1   C2   O2   HO2    1.5340  110.87 -100.51  112.13   0.9638
+IC   C2   C3   O3   HO3    1.5253  108.09 -165.88  112.08   0.9730
+IC   C3   C4   O4   HO4    1.5177  108.31  134.18  106.97   0.9713
+PATC FIRS NONE LAST NONE
+
+RESI AXYL   0.00000     ! 4C1 alpha-D-xylopyranose
+GROU
+ATOM C1   CTS     0.200  !
+ATOM H1   HAS     0.090  !
+ATOM O1   OHS    -0.660  !
+ATOM HO1  HOS     0.430  !
+ATOM C5   CTS     0.160  !
+ATOM H51  HAS     0.090  !      H51   H52
+ATOM H52  HAS     0.090  !         \ /
+ATOM O5   OES    -0.400  !      H4  C5--O5   O1-HO1
+GROU                     !       \ /     \  /
+ATOM C2   CTS     0.140  ! HO4-O4-C4      C1-H1
+ATOM H2   HAS     0.090  !         \     / 
+ATOM O2   OHS    -0.660  !       H3-C3--C2-O2-HO2	
+ATOM HO2  HOS     0.430  !          |   |
+GROU                     !          O3  H2
+ATOM C3   CTS     0.140  !          | 
+ATOM H3   HAS     0.090  !          HO3
+ATOM O3   OHS    -0.660  !
+ATOM HO3  HOS     0.430  !
+GROU                     !
+ATOM C4   CTS     0.140  !
+ATOM H4   HAS     0.090  !
+ATOM O4   OHS    -0.660  !
+ATOM HO4  HOS     0.430  !
+BOND C1   O1        C1   H1        O1   HO1       C1   O5        C1   C2
+BOND C2   H2        C2   O2        O2   HO2       C2   C3        C3   H3 
+BOND C3   O3        O3   HO3       C3   C4        C4   H4        C4   O4 
+BOND O4   HO4       C4   C5        C5   H51       C5   H52       C5   O5
+DONO BLNK HO1
+DONO BLNK HO2
+DONO BLNK HO3
+DONO BLNK HO4
+ACCE O1
+ACCE O2
+ACCE O3
+ACCE O4
+ACCE O5
+!    I    J    K    L      R(IK)   T(IKJ)    PHI   T(JKL)   R(KL)
+IC   O1   C2  *C1   H1     1.3889  109.35 -122.69  108.98   1.0950 
+IC   O1   O5  *C1   C2     1.3889  111.55 -121.57  110.06   1.5340
+IC   O2   C3  *C2   H2     1.4154  112.27 -118.21  108.23   1.0919
+IC   O2   C1  *C2   C3     1.4154  110.87 -125.56  111.08   1.5253
+IC   O3   C4  *C3   H3     1.4157  110.61  120.65  108.81   1.1068
+IC   O3   C2  *C3   C4     1.4157  108.09  120.77  109.86   1.5177
+IC   O4   C5  *C4   H4     1.4252  110.90 -120.61  108.35   1.1024 
+IC   O4   C3  *C4   C5     1.4252  108.31 -122.08  111.17   1.5287
+IC   H52  O5  *C5   H51    1.0813  108.10  118.69  109.65   1.1042
+IC   H52  C4  *C5   O5     1.0813  111.57  119.10  108.69   1.4274
+IC   O5   C1   C2   C3     1.4254  110.06   54.09  111.08   1.5253
+IC   C1   C2   C3   C4     1.5340  111.08  -51.23  109.86   1.5177
+IC   C2   C3   C4   C5     1.5253  109.86   53.25  111.17   1.5288
+IC   C3   C4   C5   O5     1.5177  111.17  -57.46  108.69   1.4274
+IC   C4   C5   O5   C1     1.5288  108.69   62.25  113.77   1.4254
+IC   C5   O5   C1   C2     1.4274  113.77  -60.97  110.06   1.5340
+IC   O5   C1   O1   HO1    1.4254  111.55   74.87  107.83   0.9684
+IC   C1   C2   O2   HO2    1.5340  110.87 -100.51  112.13   0.9638
+IC   C2   C3   O3   HO3    1.5253  108.09 -165.88  112.08   0.9730
+IC   C3   C4   O4   HO4    1.5177  108.31  134.18  106.97   0.9713
+PATC FIRS NONE LAST NONE
+
+!________________________ Patches __________________________________
+
+PRES BETA         0.0    ! patch to make the C1 group equitorial (beta)
+GROU                     ! 
+ATOM C1   CBS     0.200  !   <--- this is the changed ATOM
+IC   O1   C2  *C1   H1     1.3890  105.75  114.54  108.17   1.0950 
+IC   O1   O5  *C1   C2     1.3890  111.55  117.06  110.06   1.5340
+
+PRES C2         0.0   ! patch to make the C2 group axial
+IC   O2   C3  *C2   H2     1.4215  111.64  128.12  105.85   1.0010
+IC   O2   C1  *C2   C3     1.4215  106.16  120.87  109.90   1.5186
+
+PRES C3         0.0   ! patch to make the C3 group axial
+IC   O3   C4  *C3   H3     1.4157  110.61 -120.65  108.81   1.1068
+IC   O3   C2  *C3   C4     1.4157  108.09 -120.77  109.86   1.5177
+
+PRES C4        0.0   ! patch to make the C4 group axial
+IC   O4   C5  *C4   H4     1.4215  107.18  119.92  110.37   1.1004 
+IC   O4   C3  *C4   C5     1.4215  110.06  118.59  111.17   1.5289
+
+PRES C5         0.0   ! patch to make C5 group axial, as in an L-sugar
+IC   C6   O5  *C5   H5     1.5099  108.10 -118.69  109.65   1.1042
+IC   C6   C4  *C5   O5     1.5099  111.57 -119.10  108.69   1.4274
+
+
+PRES GL14        0.0    ! 1-4 linkage when the reducing ring
+GROUP                   ! is an alpha-sugar
+ATOM 1c5 CTS    0.1     ! 
+ATOM 1h5 HAS    0.1     ! 
+ATOM 1o5 OES   -0.4     ! 
+ATOM 1H1 HAS    0.1     ! 
+ATOM 1C1 CTS    0.30    ! 
+ATOM 1O1 OES   -0.4     ! 
+ATOM 2C4 CTS    0.10    ! 
+ATOM 2H4 HAS    0.10    ! 
+DELETE ATOM 1HO1
+DELETE ATOM 2O4
+DELETE ATOM 2HO4
+BOND 1O1 2C4
+ANGL  1C1 1O1 2C4   1O1 2C4 2C3
+ANGL  1O1 2C4 2C5   1O1 2C4 2H4
+DIHE  1O5 1C1 1O1 2C4       1C1 1O1 2C4 2c5
+DIHE  1C2 1C1 1O1 2C4       1C1 1O1 2C4 2c3
+DIHE  1h1 1C1 1O1 2C4       1C1 1O1 2C4 2h4
+DIHE  1O1 2C4 2C5 2C6       1O1 2C4 2C5 2H5
+DIHE  1O1 2C4 2C5 2O5       1O1 2C4 2C3 2C2       
+DIHE  1O1 2C4 2C3 2H3       1O1 2C4 2C3 2O3        
+IC    1H1  1C1  1O1  2C4    1.0882  110.64    4.85  117.87   1.4195
+IC    1C1  1O1  2C4  2H4    1.4138  117.87   13.26  110.59   1.0977
+IC    2C3  2C5 *2C4  1O1    1.5265  109.15 -118.85  110.91   1.4195
+IC    2C5  1O1 *2C4  2H4    1.5340  110.91  121.00  110.59   1.0977
+IC    1O1  2C4  2C5  2O5    1.4195  110.91 -178.47  109.01   1.4229
+IC    1O1  2C4  2C3  2C2    1.4195  107.98  174.59  110.07   1.5280
+
+PRES GB14        0.0    ! 1-4 linkage when the reducing ring          
+GROUP                   ! is a beta-sugar                         
+ATOM 1C5 CTS    0.1     ! 
+ATOM 1H5 HAS    0.1     ! 
+ATOM 1O5 OES   -0.4     ! 
+ATOM 1H1 HAS    0.1     ! 
+ATOM 1C1 CBS    0.30    ! 
+ATOM 1O1 OES   -0.4     ! 
+ATOM 2C4 CTS    0.10    ! 
+ATOM 2H4 HAS    0.10    ! 
+DELETE ATOM 1HO1
+DELETE ATOM 2O4
+DELETE ATOM 2HO4
+BOND 1O1 2C4
+ANGL  1C1 1O1 2C4   1O1 2C4 2C3
+ANGL  1O1 2C4 2C5   1O1 2C4 2H4
+DIHE  1o5 1C1 1O1 2C4       1C1 1O1 2C4 2c5
+DIHE  1c2 1C1 1O1 2C4       1C1 1O1 2C4 2c3
+DIHE  1h1 1C1 1O1 2C4       1C1 1O1 2C4 2h4
+DIHE  1O1 2C4 2c5 2O5       1O1 2C4 2c5 2C6
+DIHE  1O1 2C4 2c5 2H5       1O1 2C4 2c3 2C2
+DIHE  1O1 2C4 2c3 2O3       1O1 2C4 2c3 2H3
+IC    1H1  1C1  1O1  2C4    1.0882  110.64    4.85  117.87   1.4195
+IC    1C1  1O1  2C4  2H4    1.4138  117.87   13.26  110.59   1.0977
+IC    2C3  2C5 *2C4  1O1    1.5265  109.15 -118.85  110.91   1.4195
+IC    2C5  1O1 *2C4  2H4    1.5340  110.91  121.00  110.59   1.0977
+IC    1O1  2C4  2C5  2O5    1.4195  110.91 -178.47  109.01   1.4229
+IC    1O1  2C4  2C3  2C2    1.4195  107.98  174.59  110.07   1.5280
+
+!XXXXXXXXXXXXXXXXXXXXXXX XYL TO XYL  JOINT XXXXXXXXXXXXXXXXXXXXXXXXXXX
+PRES XY14        0.0     !  1-4 linkage for dixylose
+GROUP                    !
+ATOM 1C5  CTS    0.0     ! 
+ATOM 1H51 HAS    0.1     !  
+ATOM 1H52 HAS    0.1     !  
+ATOM 1O5  OES   -0.4     ! 
+ATOM 1H1  HAS    0.1     ! 
+ATOM 1C1  CTS    0.30    ! 
+ATOM 1O1  OES   -0.4     ! 
+ATOM 2C4  CTS    0.10    !  
+ATOM 2H4  HAS    0.10    ! 
+DELETE ATOM 1HO1
+DELETE ATOM 2O4
+DELETE ATOM 2HO4
+BOND 1O1 2C4
+ANGL  1C1 1O1 2C4   1O1 2C4 2C3
+ANGL  1O1 2C4 2C5   1O1 2C4 2H4
+DIHE  1O5 1C1 1O1 2C4       1C1 1O1 2C4 2c5
+DIHE  1C2 1C1 1O1 2C4       1C1 1O1 2C4 2c3
+DIHE  1H1 1C1 1O1 2C4       1C1 1O1 2C4 2h4
+DIHE  1O1 2C4 2C5 2H51      1O1 2C4 2C5 2H52
+DIHE  1O1 2C4 2C5 2O5       1O1 2C4 2C3 2C2       
+DIHE  1O1 2C4 2C3 2H3       1O1 2C4 2C3 2O3        
+IC    1H1  1C1  1O1  2C4    1.0882  110.64    4.85  117.87   1.4195
+IC    1C1  1O1  2C4  2H4    1.4138  117.87   13.26  110.59   1.0977
+IC    2C3  2C5 *2C4  1O1    1.5265  109.15 -118.85  110.91   1.4195
+IC    2C5  1O1 *2C4  2H4    1.5340  110.91  121.00  110.59   1.0977
+IC    1O1  2C4  2C5  2O5    1.4195  110.91 -178.47  109.01   1.4229
+IC    1O1  2C4  2C3  2C2    1.4195  107.98  174.59  110.07   1.5280
+
+PRES 1C4        0.0   ! patch to make the ring a 1c4 conformation
+IC   O5   C1   C2   C3     1.4254  110.06  -57.64  111.08   1.5253
+IC   C1   C2   C3   C4     1.5340  111.08   56.15  109.86   1.5177
+IC   C2   C3   C4   C5     1.5253  109.86  -52.90  111.17   1.5288
+IC   C3   C4   C5   O5     1.5177  111.17   49.15  108.69   1.4274
+IC   C4   C5   O5   C1     1.5288  108.69  -52.02  113.77   1.4254
+IC   C5   O5   C1   C2     1.4274  113.77   56.77  110.06   1.5340
+
+PRES GL16        0.0    ! 1-6 linkage when the reducing ring
+GROUP                   ! is an alpha-sugar
+ATOM 1H1  HAS  0.1
+ATOM 1C1  CTS  0.25
+ATOM 1O1  OES -0.4
+ATOM 1C5  CTS  0.1
+ATOM 1H5  HAS  0.1
+ATOM 1O5  OES -0.4
+ATOM 2C6  CPS  0.05
+ATOM 2H61 HAS  0.1
+ATOM 2H62 HAS  0.1
+DELETE ATOM 1HO1
+DELETE ATOM 2O6
+DELETE ATOM 2HO6
+BOND 1O1 2C6
+ANGL 1C1  1O1  2C6     1O1  2C6  2C5
+ANGL 1O1  2C6  2H61    1O1  2C6  2H62
+DIHE  1O5 1C1 1O1 2C6       1C1 1O1 2C6 2C5
+DIHE  1C2 1C1 1O1 2C6       1C1 1O1 2C6 2H62
+DIHE  1H1 1C1 1O1 2C6       1C1 1O1 2C6 2H61
+DIHE  1O1 2C6 2C5 2O5       1O1 2C6 2C5 2H5
+DIHE  1O1 2C6 2C5 2C4
+IC    1C1  1O1  2C6  2c5    1.3900  113.00  180.00  110.40   1.5099
+IC    1C1  1C2  1C3  1C4    1.5340  111.08  -51.23  109.86   1.5177
+IC    1O5  1C1  1O1  2C6    1.4254  111.55  180.00  113.00   1.4000
+IC    1O1  2C6  2C5  2C4    1.4000  110.40  180.00  111.57   1.5287
+IC    1O1  2H62 *2C6 2H61   1.4132  110.47 -120.32  107.85   1.0945
+IC    1O1  2C5  *2C6 2H62   1.4132  110.45 -121.53  108.99   1.0959
+
+
+PRES GL11        0.0    ! 1-1 linkage when the reducing ring
+GROUP                   ! is an alpha-sugar
+ATOM 1C5 CTS    0.10    ! 
+ATOM 1H5 HAS    0.10    ! 
+ATOM 1O5 OES   -0.40    ! 
+ATOM 1H1 HAS    0.10    ! 
+ATOM 1C1 CTS    0.30    ! 
+ATOM 1O1 OES   -0.40    ! 
+ATOM 2C1 CTS    0.30    ! 
+ATOM 2H1 HAS    0.10    ! 
+ATOM 2C5 CTS    0.10    ! 
+ATOM 2H5 HAS    0.10    ! 
+ATOM 2O5 OES   -0.40    ! 
+DELETE ATOM 1HO1
+DELETE ATOM 2O1
+DELETE ATOM 2HO1
+BOND 1O1 2C1
+ANGL  1C1 1O1 2C1   1O1 2C1 2O5
+ANGL  1O1 2C1 2C2   1O1 2C1 2H1
+DIHE  1O5 1C1 1O1 2C1       1C1 1O1 2C1 2O5
+DIHE  1C2 1C1 1O1 2C1       1C1 1O1 2C1 2C2
+DIHE  1H1 1C1 1O1 2C1       1C1 1O1 2C1 2H1
+DIHE  1O1 2C1 2C2 2O2       1O1 2C1 2C2 2H2
+DIHE  1O1 2C1 2C2 2C3       1O1 2C1 2O5 2C5               
+IC    1H1  1C1  1O1  2C1    1.0882  110.64    4.85  117.87   1.4195
+IC    1C1  1O1  2C1  2H1    1.4138  117.87   13.26  110.59   1.0977
+IC    2O5  2C2 *2C1  1O1    1.5265  109.15 -118.85  110.91   1.4195
+IC    2C2  1O1 *2C1  2H1    1.5340  110.91  121.00  110.59   1.0977
+IC    1O1  2C1  2C2  2C3    1.4195  110.91 -178.47  109.01   1.4229
+IC    1O1  2C1  2O5  2C5    1.4195  107.98  174.59  110.07   1.5280
+
+END

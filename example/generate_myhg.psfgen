@@ -1,0 +1,38 @@
+topology CSFF_top.inp
+
+# setup a new segement, create 6 monomers
+segment MYHG {
+ for { set i 0 } { $i < 6 } { incr i } {
+  residue  $i AGLC MYHG
+ }
+}
+
+# convert each monomer from alpha sugar to beta sugar
+for { set i 0 } { $i < 6 } { incr i } {
+ patch BETA MYHG:$i
+}
+
+# bind neighboring monomers with a beta-1-4 linkage
+for { set i 1 } { $i < 6 } { incr i } {
+ set j [expr $i-1]
+ patch GB14 MYHG:$j MYHG:$i
+}
+
+
+# seed your structure with coordinates
+coord MYHG 0 C1 { 19.170  64.030  39.440 }            
+coord MYHG 0 H1 { 19.350  64.550  38.480 }            
+coord MYHG 0 O1 { 20.360  63.560  40.060 }            
+coord MYHG 0 C5 { 17.360  65.490  40.020 }            
+coord MYHG 0 H5 { 17.540  65.910  39.020 }            
+coord MYHG 0 O5 { 18.620  64.940  40.370 }
+
+# automatically generate coordinates from IC entries in the topology
+guesscoord
+
+# write files
+#writepsf myhg.psf
+
+
+writepdb myhg.pdb
+writetop myhg.top

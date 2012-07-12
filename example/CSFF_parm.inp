@@ -1,0 +1,365 @@
+**********************************************************************
+* Carbohydrate parameter file CSFF_parm.inp
+*     for pyranose simulations
+* Michelle Kuttel, J. W. Brady and Kevin J. Naidoo
+* Aug/Sep 2001
+* Modified from the PHLB (Palma-Himmel-Liang-Brady) force field parameters:
+*     added CPS atom type and altered primary alcohol
+*     dihedral force constants from CTS values 
+*     to lower energy the barriers to primary alcohol rotation
+* Comments to Kevin J. Naidoo email:naidoo,science.uct.ac.za
+****************************************************************
+*
+! 
+!references
+!
+! M. Kuttel and J. W. Brady and K. J. Naidoo. "Carbohydrate Solution
+! Simulations: Producing a Force Field with Experimentally Consistent
+! Primary Alcohol Rotational Frequencies and Populations",
+! J. Comput. Chem., 2002,23:1236-1243
+!
+!PHLB force field precursor
+!
+!R. Palma and M. E. Himmel and G. Liang and J. W. Brady. "Molecular
+!Mechanics Studies of Cellulases" in "Glycosyl Hydrolases in Biomass
+!Conversion: ACS Symposium Series", published by ACS, 2001, editor
+!M. E. Himmel
+!
+!HBFB force field precursor
+!
+!S. N. Ha and A. Giammona and M. Field and J. W. Brady, "A revised
+!potential-energy surface for molecular studies of carbohydrates",
+!Carbohydr. Res., 1988,180,207-221
+! NOTE: messages about multiple dihedral terms on reading this file are
+! normal and signify that the multiple dihedral terms have in fact
+! correctly been read (see CHARMM docs - parmfile.doc)
+BONDS
+HOS  OHS    460.5000              0.9595
+HAS  CTS    335.6034              1.1000
+HAS  CPS    335.6034              1.1000
+HAS  CBS    335.6034              1.1052
+CTS  OHS    384.0792              1.4066
+CPS  OHS    384.0792              1.4066
+CBS  OHS    384.0792              1.3932
+CTS  CTS    325.5297              1.5066
+CTS  CPS    325.5297              1.5066
+CBS  CTS    325.5297              1.5074
+CTS  OES    385.3133              1.4165
+CPS  OES    385.3133              1.4165
+CBS  OES    385.3133              1.4202
+HSPC OSPC   450.0                 1.0         ! SPC Geometry
+HSPC HSPC     0.0                 1.6329931   ! SPC Geometry (for SHAKE )
+HT   OT     450.0                 0.9572      ! TIP3P geometry
+HT   HT       0.0                 1.5139      ! TIP3P geometry (for SHAKE)
+THETAS
+HAS  CTS  CTS          42.9062            109.7502
+HAS  CBS  CTS          42.9062            109.7502
+HAS  CTS  CBS          42.9062            109.7502
+HAS  CTS  CPS          42.9062            109.7502
+HAS  CPS  CTS          42.9062            109.7502
+OHS  CTS  CTS         112.2085            107.6019
+OHS  CBS  CTS         112.2085            107.6019
+OHS  CTS  CBS         112.2085            107.6019
+OHS  CPS  CTS         112.2085            107.6019
+OHS  CTS  CPS         112.2085            107.6019
+HOS  OHS  CTS          57.5478            109.1722
+HOS  OHS  CBS          57.5478            109.1722
+HOS  OHS  CPS          57.5478            109.1722
+HAS  CTS  HAS          36.8220            106.1784
+HAS  CPS  HAS          36.8220            106.1784
+HAS  CTS  OHS          52.5070            109.3850
+HAS  CBS  OHS          52.5070            109.3850
+HAS  CPS  OHS          52.5070            109.3850
+HT   OT   HT           55.0               104.52       ! FROM TIPS3P GEOMETRY
+HSPC OSPC HSPC         55.0               109.47122    ! FROM SPC GEOMETRY
+HAS  CTS  OES          62.2500            106.4025
+HAS  CBS  OES          62.2500            106.4025
+HAS  CPS  OES          62.2500            106.4025
+CTS  CTS  CTS         167.3535            110.6156
+CBS  CTS  CTS         167.3535            110.6156
+CPS  CTS  CTS         167.3535            110.6156
+CTS  CTS  OES         169.0276            108.3759
+CBS  CTS  OES         169.0276            108.3759
+CPS  CTS  OES         169.0276            108.3759
+CTS  CPS  OES         169.0276            108.3759
+CTS  CBS  OES         169.0276            108.3759
+CTS  OES  CTS          92.5892            111.5092
+CTS  OES  CPS          92.5892            111.5092
+CBS  OES  CTS          92.5892            111.5092
+OES  CTS  OHS          74.2586            115.7322
+OES  CBS  OHS          74.2586            110.3385
+OES  CTS  OES          37.4370            112.1882
+OES  CBS  OES          37.4370            106.9160
+DIHEDRALS
+CTS  CTS  CTS  CTS     -1.0683    1      0.0
+CTS  CTS  CTS  CTS     -0.5605    2      0.0
+CTS  CTS  CTS  CTS      0.1955    3      0.0
+CBS  CTS  CTS  CTS     -1.0683    1      0.0
+CBS  CTS  CTS  CTS     -0.5605    2      0.0
+CBS  CTS  CTS  CTS      0.1955    3      0.0
+CPS  CTS  CTS  CTS     -1.0683    1      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  CTS     -0.5605    2      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  CTS      0.1955    3      0.0 !MK - CTS value unchanged 
+CTS  CTS  CTS  OES     -1.2007    1      0.0
+CTS  CTS  CTS  OES     -0.3145    2      0.0
+CTS  CTS  CTS  OES     -0.0618    3      0.0
+CBS  CTS  CTS  OES     -1.2007    1      0.0
+CBS  CTS  CTS  OES     -0.3145    2      0.0
+CBS  CTS  CTS  OES     -0.0618    3      0.0
+CPS  CTS  CTS  OES     -1.2007    1      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  OES     -0.3145    2      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  OES     -0.0618    3      0.0 !MK - CTS value unchanged 
+CTS  CTS  CBS  OES     -1.2007    1      0.0
+CTS  CTS  CBS  OES     -0.3145    2      0.0
+CTS  CTS  CBS  OES     -0.0618    3      0.0
+CTS  CTS  CPS  OES     -1.2007    1      0.0 !MK - CTS value unchanged 
+CTS  CTS  CPS  OES     -0.3145    2      0.0 !MK - CTS value unchanged 
+CTS  CTS  CPS  OES     -0.0618    3      0.0 !MK - CTS value unchanged 
+CTS  CTS  CTS  OHS     -1.9139    1      0.0
+CTS  CTS  CTS  OHS      0.2739    2      0.0
+CTS  CTS  CTS  OHS     -0.0340    3      0.0
+CTS  CTS  CBS  OHS     -1.9139    1      0.0
+CTS  CTS  CBS  OHS     -0.3739    2      0.0
+CTS  CTS  CBS  OHS     -0.0340    3      0.0
+CTS  CTS  CPS  OHS     -1.7139    1      0.0 !MK - changed from -1.9139
+CTS  CTS  CPS  OHS     -1.0239    2      0.0 !MK - changed from -0.3739
+CTS  CTS  CPS  OHS     -0.0340    3      0.0 !MK - CTS value unchanged
+CBS  CTS  CTS  OHS     -1.9139    1      0.0
+CBS  CTS  CTS  OHS     -0.3739    2      0.0
+CBS  CTS  CTS  OHS     -0.0340    3      0.0
+CPS  CTS  CTS  OHS     -1.9139    1      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  OHS     -0.3739    2      0.0 !MK - CTS value unchanged 
+CPS  CTS  CTS  OHS     -0.0340    3      0.0 !MK - CTS value unchanged 
+CTS  OES  CTS  CTS     -0.8477    1      0.0
+CTS  OES  CTS  CTS     -0.3018    2      0.0
+CTS  OES  CTS  CTS      0.3763    3      0.0
+CTS  OES  CTS  CPS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CTS  OES  CTS  CPS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CTS  OES  CTS  CPS      0.3763    3      0.0 !MK - CTS value unchanged 
+CBS  OES  CTS  CTS     -0.8477    1      0.0
+CBS  OES  CTS  CTS     -0.3018    2      0.0
+CBS  OES  CTS  CTS      0.3763    3      0.0
+CBS  OES  CTS  CPS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CBS  OES  CTS  CPS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CBS  OES  CTS  CPS      0.3763    3      0.0 !MK - CTS value unchanged 
+CBS  OES  CPS  CTS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CBS  OES  CPS  CTS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CBS  OES  CPS  CTS      0.3763    3      0.0 !MK - CTS value unchanged 
+CPS  OES  CTS  CTS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CPS  OES  CTS  CTS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CPS  OES  CTS  CTS      0.3763    3      0.0 !MK - CTS value unchanged 
+CTS  OES  CBS  CTS     -0.8477    1      0.0
+CTS  OES  CBS  CTS     -0.3018    2      0.0
+CTS  OES  CBS  CTS      0.3763    3      0.0
+CTS  OES  CPS  CTS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CTS  OES  CPS  CTS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CTS  OES  CPS  CTS      0.3763    3      0.0 !MK - CTS value unchanged 
+CPS  OES  CBS  CTS     -0.8477    1      0.0 !MK - CTS value unchanged 
+CPS  OES  CBS  CTS     -0.3018    2      0.0 !MK - CTS value unchanged 
+CPS  OES  CBS  CTS      0.3763    3      0.0 !MK - CTS value unchanged 
+HAS  CTS  CTS  CTS      0.0000    1      0.0
+HAS  CTS  CTS  CTS      0.0000    2      0.0
+HAS  CTS  CTS  CTS      0.1441    3      0.0
+HAS  CBS  CTS  CTS      0.0000    1      0.0
+HAS  CBS  CTS  CTS      0.0000    2      0.0
+HAS  CBS  CTS  CTS      0.1441    3      0.0
+HAS  CPS  CTS  CTS      0.0000    1      0.0 !MK - CTS value unchanged
+HAS  CPS  CTS  CTS      0.0000    2      0.0 !MK - CTS value unchanged
+HAS  CPS  CTS  CTS      0.1441    3      0.0 !MK - CTS value unchanged 
+HAS  CTS  CTS  CBS      0.0000    1      0.0
+HAS  CTS  CTS  CBS      0.0000    2      0.0
+HAS  CTS  CTS  CBS      0.1441    3      0.0
+HAS  CTS  CTS  CPS      0.0000    1      0.0 !MK - CTS value unchanged 
+HAS  CTS  CTS  CPS      0.0000    2      0.0 !MK - CTS value unchanged 
+HAS  CTS  CTS  CPS      0.1441    3      0.0 !MK - CTS value unchanged 
+HAS  CTS  CTS  HAS      0.0000    1      0.0
+HAS  CTS  CTS  HAS      0.0000    2      0.0
+HAS  CTS  CTS  HAS      0.1595    3      0.0
+HAS  CBS  CTS  HAS      0.0000    1      0.0
+HAS  CBS  CTS  HAS      0.0000    2      0.0
+HAS  CBS  CTS  HAS      0.1595    3      0.0
+HAS  CPS  CTS  HAS      0.0000    1      0.0 !MK - CTS value unchanged
+HAS  CPS  CTS  HAS      0.0000    2      0.0 !MK - CTS value unchanged
+HAS  CPS  CTS  HAS      0.1595    3      0.0 !MK - CTS value unchanged 
+HAS  CTS  OES  CTS      0.0000    1      0.0
+HAS  CTS  OES  CTS      0.0000    2      0.0
+HAS  CTS  OES  CTS      0.2840    3      0.0
+HAS  CBS  OES  CTS      0.0000    1      0.0
+HAS  CBS  OES  CTS      0.0000    2      0.0
+HAS  CBS  OES  CTS      0.2840    3      0.0
+HAS  CBS  OES  CPS      0.0000    1      0.0 !MK - CTS value unchanged 
+HAS  CBS  OES  CPS      0.0000    2      0.0 !MK - CTS value unchanged 
+HAS  CBS  OES  CPS      0.2840    3      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CTS      0.0000    1      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CTS      0.0000    2      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CTS      0.2840    3      0.0 !MK - CTS value unchanged 
+HAS  CTS  OES  CBS      0.0000    1      0.0
+HAS  CTS  OES  CBS      0.0000    2      0.0
+HAS  CTS  OES  CBS      0.2840    3      0.0
+HAS  CTS  OES  CPS      0.0000    1      0.0 !MK - CTS value unchanged 
+HAS  CTS  OES  CPS      0.0000    2      0.0 !MK - CTS value unchanged 
+HAS  CTS  OES  CPS      0.2840    3      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CBS      0.0000    1      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CBS      0.0000    2      0.0 !MK - CTS value unchanged 
+HAS  CPS  OES  CBS      0.2840    3      0.0 !MK - CTS value unchanged 
+HOS  OHS  CTS  CTS      1.0504    1      0.0
+HOS  OHS  CTS  CTS      0.1336    2      0.0
+HOS  OHS  CTS  CTS      0.3274    3      0.0
+HOS  OHS  CBS  CTS      1.0504    1      0.0
+HOS  OHS  CBS  CTS      0.1336    2      0.0
+HOS  OHS  CBS  CTS      0.3274    3      0.0
+HOS  OHS  CPS  CTS      1.0504    1      0.0 !MK - CTS value unchanged 
+HOS  OHS  CPS  CTS      0.1336    2      0.0 !MK - CTS value unchanged 
+HOS  OHS  CPS  CTS      0.3274    3      0.0 !MK - CTS value unchanged 
+HOS  OHS  CTS  CBS      1.0504    1      0.0
+HOS  OHS  CTS  CBS      0.1336    2      0.0
+HOS  OHS  CTS  CBS      0.3274    3      0.0
+HOS  OHS  CTS  HAS      0.0000    1      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CTS  HAS      0.0000    2      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CTS  HAS      0.0677    3      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CBS  HAS      0.0000    1      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CBS  HAS      0.0000    2      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CBS  HAS      0.0677    3      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CPS  HAS      0.0000    1      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CPS  HAS      0.0000    2      0.0 !MK - CTS * 40% (hyd rot)
+HOS  OHS  CPS  HAS      0.0677    3      0.0 !MK - CTS * 40% (hyd rot)
+OES  CTS  CTS  HAS      0.0000    1      0.0
+OES  CTS  CTS  HAS      0.0000    2      0.0
+OES  CTS  CTS  HAS      0.1686    3      0.0
+OES  CBS  CTS  HAS      0.0000    1      0.0
+OES  CBS  CTS  HAS      0.0000    2      0.0
+OES  CBS  CTS  HAS      0.1686    3      0.0
+OES  CPS  CTS  HAS      0.0000    1      0.0 !MK - CTS value unchanged
+OES  CPS  CTS  HAS      0.0000    2      0.0 !MK - CTS value unchanged
+OES  CPS  CTS  HAS      0.1686    3      0.0 !MK - CTS value unchanged
+OES  CTS  CBS  HAS      0.0000    1      0.0
+OES  CTS  CBS  HAS      0.0000    2      0.0
+OES  CTS  CBS  HAS      0.1686    3      0.0
+OES  CTS  CPS  HAS      0.0000    1      0.0 !MK - CTS value unchanged
+OES  CTS  CPS  HAS      0.0000    2      0.0 !MK - CTS value unchanged
+OES  CTS  CPS  HAS      0.2086    3      0.0 !MK - changed from 0.1686
+OES  CTS  CTS  OES     -2.6785    1      0.0
+OES  CTS  CTS  OES      0.7851    2      0.0
+OES  CTS  CTS  OES      0.2552    3      0.0
+OES  CBS  CTS  OES     -2.6785    1      0.0
+OES  CBS  CTS  OES      0.7851    2      0.0
+OES  CBS  CTS  OES      0.2552    3      0.0
+OES  CPS  CTS  OES     -2.6785    1      0.0 !MK - CTS value unchanged
+OES  CPS  CTS  OES      0.7851    2      0.0 !MK - CTS value unchanged
+OES  CPS  CTS  OES      0.2552    3      0.0 !MK - CTS value unchanged
+OES  CTS  CTS  OHS     -3.7993    1      0.0
+OES  CTS  CTS  OHS      0.5688    2      0.0
+OES  CTS  CTS  OHS      0.4204    3      0.0
+OES  CBS  CTS  OHS     -3.7993    1      0.0
+OES  CBS  CTS  OHS      0.5688    2      0.0
+OES  CBS  CTS  OHS      0.4204    3      0.0
+OES  CTS  CBS  OHS     -3.7993    1      0.0
+OES  CTS  CBS  OHS      0.5688    2      0.0
+OES  CTS  CBS  OHS      0.4204    3      0.0
+OES  CTS  CPS  OHS     -4.0193    1      0.0 !MK  changed from -3.7993
+OES  CTS  CPS  OHS     -1.2688    2      0.0 !MK  changed from +0.5686
+OES  CTS  CPS  OHS     -0.9704    3      0.0 !MK  CHANGED from +0.4202
+OES  CTS  OES  CTS      0.1948    1      0.0
+OES  CTS  OES  CTS      0.9778    2      0.0
+OES  CTS  OES  CTS      0.9115    3      0.0
+OES  CTS  OES  CPS      0.1948    1      0.0 !MK - CTS value unchanged
+OES  CTS  OES  CPS      0.9778    2      0.0 !MK - CTS value unchanged
+OES  CTS  OES  CPS      0.9115    3      0.0 !MK - CTS value unchanged
+OES  CBS  OES  CTS      0.1948    1      0.0
+OES  CBS  OES  CTS      0.9778    2      0.0
+OES  CBS  OES  CTS      0.9115    3      0.0
+OES  CBS  OES  CPS      0.1948    1      0.0 !MK - CTS value unchanged
+OES  CBS  OES  CPS      0.9778    2      0.0 !MK - CTS value unchanged
+OES  CBS  OES  CPS      0.9115    3      0.0 !MK - CTS value unchanged
+OHS  CTS  OES  CTS      1.9193    1      0.0
+OHS  CTS  OES  CTS      1.0102    2      0.0
+OHS  CTS  OES  CTS      0.7294    3      0.0
+OHS  CBS  OES  CTS      1.9193    1      0.0
+OHS  CBS  OES  CTS      1.0102    2      0.0
+OHS  CBS  OES  CTS      0.7294    3      0.0
+OES  CTS  OHS  HOS      1.2936    1      0.0
+OES  CTS  OHS  HOS      1.3295    2      0.0
+OES  CTS  OHS  HOS      0.4323    3      0.0
+OES  CBS  OHS  HOS      1.2936    1      0.0
+OES  CBS  OHS  HOS      1.3295    2      0.0
+OES  CBS  OHS  HOS      0.4323    3      0.0
+OHS  CTS  CTS  HAS      0.0000    1      0.0
+OHS  CTS  CTS  HAS      0.0000    2      0.0
+OHS  CTS  CTS  HAS      0.1472    3      0.0
+OHS  CBS  CTS  HAS      0.0000    1      0.0
+OHS  CBS  CTS  HAS      0.0000    2      0.0
+OHS  CBS  CTS  HAS      0.1472    3      0.0
+OHS  CPS  CTS  HAS      0.0000    1      0.0 !MK - CTS value unchanged
+OHS  CPS  CTS  HAS      0.0000    2      0.0 !MK - CTS value unchanged
+OHS  CPS  CTS  HAS      0.1472    3      0.0 !MK - CTS value unchanged 
+OHS  CTS  CBS  HAS      0.0000    1      0.0
+OHS  CTS  CBS  HAS      0.0000    2      0.0
+OHS  CTS  CBS  HAS      0.1472    3      0.0
+OHS  CTS  CTS  OHS     -4.9362    1      0.0
+OHS  CTS  CTS  OHS      0.2907    2      0.0
+OHS  CTS  CTS  OHS      0.4638    3      0.0
+OHS  CBS  CTS  OHS     -4.9362    1      0.0
+OHS  CBS  CTS  OHS      0.2907    2      0.0
+OHS  CBS  CTS  OHS      0.4638    3      0.0
+
+IMPROPER
+
+NONBONDED  NBXMOD 5  atom CDIEL shift vatom VDISTANCE VSWITCH -
+     CUTNB 13.0  CTOFNB 12.0  CTONNB 10.0  EPS 1.0  E14FAC 1.0  WMIN 1.5
+!
+!                  Emin       Rmin
+!                  (kcal/mol) (A)
+HSPC        0.0000    -0.0000    1.3750    ! SPC water hydrogen 
+HT          0.00      -0.046     0.2245    ! TIP3P       
+OSPC        0.0000    -0.1554    1.7766    ! SPC
+OT          0.00      -0.1521    1.7682    ! TIP3P 
+HOS         0.00      -0.0460    0.2245    ! 
+HAS         0.00      -0.0220    1.3200    ! 
+CTS         0.00      -0.0200    2.2750     0.000     -0.01000     1.90000 !
+CBS         0.00      -0.0200    2.2750     0.000     -0.01000     1.90000 !
+CPS         0.00      -0.0200    2.2750     0.000     -0.01000     1.90000 !
+OHS         0.00      -0.1521    1.7700       ! from para_na, on5
+OES         0.00      -0.1521    1.7700       ! from para_na, on6
+
+!
+NBFIX
+!
+!       NBFIX the TIP3P water-water interactions
+OT   OT      -0.152073  3.5365  ! TIPS3P VDW INTERACTION
+HT   HT      -0.04598   0.4490
+HT   OT      -0.08363   1.9927  
+!
+!   the following will fix the SPC-sugar interaction terms
+!
+OSPC OSPC    -0.15539   3.5532  ! SPC VDW INTERACTION
+HSPC HSPC    -0.00000   0.4490
+HSPC OSPC    -0.00000   1.9927
+OSPC OHS     -0.15888   3.4657
+OSPC OES     -0.15888   3.4657
+OSPC CTS     -0.13067   3.4733
+OSPC CBS     -0.13067   3.4733
+OSPC CPS     -0.13067   3.4733
+OSPC HAS     -0.11015   2.7973
+OSPC HOS     -0.00000   1.8
+!
+!
+! this force field treats hbonds implicitly using charges; therefore the
+! following section wildcards all the energies to 0. Note that you should
+! also set the IHBFRQ to zero in all calcs, to avoid wasting time updating
+! the hydrogen bond list!
+!
+HBOND AEXP 4 REXP 6 HAEX 4 AAEX 0 NOACCEPTORS HBNOEXCLUSIONS ALL-
+  CUTHB 0.5 CTOFHB 5.0 CTONHB 4.0 CUTHA 5.0 CTOFHA 90.0 CTONHA  90.0
+!
+H*   O*      -0.00      2.0
+END
+
+
+
+
+
+
+
+
+
+
