@@ -1,0 +1,5703 @@
+diff -rupN NAMD_2.8_Source/psfgen/src/psf_file.c NAMD_2.8_Source_mod/psfgen/src/psf_file.c
+--- NAMD_2.8_Source/psfgen/src/psf_file.c	2009-02-06 18:13:14.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/psf_file.c	2011-08-11 16:03:59.000000000 -0400
+@@ -76,6 +76,55 @@ int psf_get_atom(FILE *f, char *name, ch
+ }
+  
+ 
++int psf_start_chargegroups(FILE *file) {
++
++  char inbuf[PSF_RECORD_LENGTH+2];
++  int ngrp = -1;
++
++  /* keep reading the next line until a line with NGRP appears */
++  do {
++    if(inbuf != fgets(inbuf, PSF_RECORD_LENGTH+1, file)) {
++      /* EOF encountered with no NGRP line found ==> error, return (-1) */
++      return (-1);
++    }
++    if(strlen(inbuf) > 0 && strstr(inbuf,"NGRP"))
++      ngrp = atoi(inbuf);
++  } while (ngrp == -1);
++
++  return ngrp;
++}
++
++
++int psf_get_chargegroups(FILE *f, int n, int *chargegroups) {
++
++  char inbuf[PSF_RECORD_LENGTH+2];
++  char *chargegroupptr = NULL;
++  int i=0;
++  while (i<n) {
++	// each line contains up to 3 charge group entries
++    if((i % 3) == 0) {
++      /* must read next line */
++      if(!fgets(inbuf,PSF_RECORD_LENGTH+2,f)) {
++        /* early EOF encountered */
++        break;
++      }
++      chargegroupptr = inbuf;
++    }
++    if((chargegroups[3*i] = atoi(chargegroupptr)) < 0)
++      break;
++    chargegroupptr += 8;
++    if((chargegroups[3*i+1] = atoi(chargegroupptr)) < 0)
++      break;
++    chargegroupptr += 8;
++    if((chargegroups[3*i+2] = atoi(chargegroupptr)) < 0)
++      break;
++    chargegroupptr += 8;
++    i++;
++  }
++
++  return (i != n);
++}
++
+ int psf_get_bonds(FILE *f, int n, int *bonds) {
+   char inbuf[PSF_RECORD_LENGTH+2];
+   char *bondptr = NULL;
+diff -rupN NAMD_2.8_Source/psfgen/src/psf_file_extract.c NAMD_2.8_Source_mod/psfgen/src/psf_file_extract.c
+--- NAMD_2.8_Source/psfgen/src/psf_file_extract.c	2009-02-06 18:13:15.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/psf_file_extract.c	2011-08-11 20:15:35.000000000 -0400
+@@ -179,6 +179,40 @@ static int extract_bonds(FILE *file, top
+   return 0;
+ }
+ 
++static int extract_chargegroups(FILE *file, topo_mol *mol, int natoms,
++                         topo_mol_atom_t **molatomlist) {
++
++  int i,j, nchargegroups;
++  int *chargegroups;
++
++  nchargegroups = psf_start_chargegroups(file);
++  printf("ben: number of charge groups: %d\n",nchargegroups);
++  if (nchargegroups < 0) return -1;
++  chargegroups = (int *)malloc(3*nchargegroups*sizeof(int));
++
++  if (psf_get_chargegroups(file, nchargegroups, chargegroups)) {
++    free(chargegroups);
++    return -1;
++  }
++
++  for (i=nchargegroups-1; i >= 0; i--) {
++    topo_mol_atom_t *atom;
++    topo_mol_chargegroup_t *group;
++
++    atom = molatomlist[chargegroups[3*i]];
++
++    group = memarena_alloc(mol->arena,sizeof(topo_mol_chargegroup_t));
++    group->next = atom->chargegroups;
++    group->atom = atom;
++    group->del = 0;
++
++    atom->chargegroups = group;
++  }
++
++  free(chargegroups);
++  return 0;
++}
++
+ static int extract_angles(FILE *file, topo_mol *mol, int natoms, 
+                          topo_mol_atom_t **molatomlist) {
+ 
+@@ -538,6 +572,14 @@ int psf_file_extract(topo_mol *mol, FILE
+     return -1;
+   }
+ 
++  if (extract_chargegroups(file, mol, natoms, molatomlist)) {
++    print_msg(v,"Error processing charge groups");
++    free(atomlist);
++    free(molatomlist);
++    return -1;
++  }
++  
++
+   switch (extract_cmaps(file, mol, natoms, molatomlist)) {
+   case 0:
+     break;
+diff -rupN NAMD_2.8_Source/psfgen/src/tcl_psfgen.c NAMD_2.8_Source_mod/psfgen/src/tcl_psfgen.c
+--- NAMD_2.8_Source/psfgen/src/tcl_psfgen.c	2011-01-29 21:55:23.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/tcl_psfgen.c	2011-08-11 16:03:59.000000000 -0400
+@@ -149,7 +149,9 @@ int tcl_guesscoord(ClientData data, Tcl_
+ int tcl_readpsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_readplugin(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_writepsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_writetop(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_writepdb(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_writetranslate(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_writeplugin(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_first(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+ int tcl_last(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
+@@ -224,9 +226,13 @@ int Psfgen_Init(Tcl_Interp *interp) {
+   Tcl_CreateCommand(interp,"guesscoord",tcl_guesscoord,
+ 	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
+   Tcl_CreateCommand(interp,"writepsf",tcl_writepsf,
+-	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);	
++  Tcl_CreateCommand(interp,"writetop",tcl_writetop,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);	
+   Tcl_CreateCommand(interp,"writepdb",tcl_writepdb,
+ 	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"writetranslate",tcl_writetranslate,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
+   Tcl_CreateCommand(interp,"writemol",tcl_writeplugin,
+ 	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
+   Tcl_CreateCommand(interp,"first",tcl_first,
+@@ -1327,6 +1333,91 @@ int tcl_writepsf(ClientData data, Tcl_In
+   return TCL_OK;
+ }
+ 
++int tcl_writetranslate(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  int charmmfmt, nocmap, i;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no translate file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  filename = argv[argc-1];
++
++  if ( ! ( res_file = fopen(filename,"w") ) ) {
++    sprintf(msg,"ERROR: Unable to open file %s to write translate table\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++sprintf(msg,"Info: writing translate table to file %s",filename );
++  newhandle_msg(interp,msg);
++  if ( topo_mol_write_translate(psf->mol,res_file,interp,newhandle_msg) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on writing translate table to file",NULL);
++    fclose(res_file);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  fclose(res_file);
++  newhandle_msg(interp, "Info: translate table complete.");
++
++  return TCL_OK;
++}
++
++
++int tcl_writetop(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no top file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  filename = argv[argc-1];
++
++  if ( ! ( res_file = fopen(filename,"w") ) ) {
++    sprintf(msg,"ERROR: Unable to open top file %s to write structure\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  sprintf(msg,"Info: writing top file %s",filename);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_write_top(psf->mol,res_file,interp,newhandle_msg) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on writing structure to top file",NULL);
++    fclose(res_file);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  fclose(res_file);
++  newhandle_msg(interp, "Info: top file complete.");
++
++  return TCL_OK;
++}
++
++
+ int tcl_writepdb(ClientData data, Tcl_Interp *interp,
+ 					int argc, CONST84 char *argv[]) {
+   FILE *res_file;
+diff -rupN NAMD_2.8_Source/psfgen/src/tcl_psfgen.c.orig NAMD_2.8_Source_mod/psfgen/src/tcl_psfgen.c.orig
+--- NAMD_2.8_Source/psfgen/src/tcl_psfgen.c.orig	1969-12-31 19:00:00.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/tcl_psfgen.c.orig	2011-01-29 21:55:23.000000000 -0500
+@@ -0,0 +1,1699 @@
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <ctype.h>
++#include "psfgen.h"
++#include "charmm_parse_topo_defs.h"
++#include "topo_mol_output.h"
++#include "topo_mol_pluginio.h"
++#include "pdb_file_extract.h"
++#include "psf_file_extract.h"
++#include "topo_defs_struct.h"
++#include "topo_mol_struct.h"
++#include "extract_alias.h"
++
++#ifdef WIN32
++#define strcasecmp  stricmp
++#define strncasecmp strnicmp
++#endif
++
++#if defined(NAMD_TCL) || ! defined(NAMD_VERSION)
++
++#include <tcl.h>
++
++/* Tcl 8.4 migration. */
++#ifndef CONST84
++#   define CONST84
++#endif
++
++/* 
++ * Provide user feedback and warnings beyond result values.
++ * If we are running interactively, Tcl_Main will take care of echoing results
++ * to the console.  If we run a script, we need to output the results
++ * ourselves.
++ */
++void newhandle_msg(void *v, const char *msg) {
++  Tcl_Interp *interp = (Tcl_Interp *)v;
++  const char *words[2] = {"puts"};
++  char *script;
++  words[1] = msg;
++  script = Tcl_Merge(2,words);
++  Tcl_Eval(interp,script);
++  Tcl_Free(script);
++}
++
++/*
++ * Kills molecule to prevent user from saving bogus output.
++ */
++void psfgen_kill_mol(Tcl_Interp *interp, psfgen_data *data) {
++  if (data->mol) {
++    Tcl_AppendResult(interp,
++	"\nMOLECULE DESTROYED BY FATAL ERROR!  Use resetpsf to start over.",
++	NULL);
++  }
++  topo_mol_destroy(data->mol);
++  data->mol = 0;
++}
++
++int psfgen_test_mol(Tcl_Interp *interp, psfgen_data *data) {
++  if (! data->mol) {
++        Tcl_AppendResult(interp,
++        "\nMOLECULE MISSING!  Use resetpsf to start over.",
++        NULL);
++    return -1;
++  }
++  return 0;
++}
++
++#define PSFGEN_TEST_MOL(INTERP,DATA) \
++  if ( psfgen_test_mol(INTERP,DATA) ) return TCL_ERROR
++
++/* This function gets called if/when the Tcl interpreter is deleted. */
++static void psfgen_deleteproc(ClientData cd, Tcl_Interp *interp) {
++  int *countptr;
++  psfgen_data *data = (psfgen_data *)cd;
++  topo_mol_destroy(data->mol);
++  topo_defs_destroy(data->defs);
++  stringhash_destroy(data->aliases);
++  free(data);
++  countptr = Tcl_GetAssocData(interp, "Psfgen_count", 0);
++  if (countptr) {
++    countptr[1] += 1;   /* num destroyed */
++  }
++}
++
++void psfgen_data_delete_pointer(ClientData cd, Tcl_Interp *interp) {
++  psfgen_data **dataptr = (psfgen_data **)cd;
++  free(dataptr);
++}
++
++static void count_delete_proc(ClientData data, Tcl_Interp *interp) {
++  free(data);
++}
++
++psfgen_data* psfgen_data_create(Tcl_Interp *interp) {
++  char namebuf[128];
++  int *countptr;
++  int id;
++  psfgen_data *data;
++  countptr = Tcl_GetAssocData(interp, "Psfgen_count", 0);
++  if (!countptr) {
++    countptr = (int *)malloc(2*sizeof(int));
++    Tcl_SetAssocData(interp, "Psfgen_count", count_delete_proc, 
++      (ClientData)countptr);
++    countptr[0] = 0;   /* num created */
++    countptr[1] = 0;   /* num destroyed */
++  } 
++  id = *countptr;
++  data = (psfgen_data *)malloc(sizeof(psfgen_data));
++  data->defs = topo_defs_create();
++  topo_defs_error_handler(data->defs,interp,newhandle_msg);
++  data->aliases = stringhash_create();
++  data->mol = topo_mol_create(data->defs);
++  topo_mol_error_handler(data->mol,interp,newhandle_msg);
++  data->id = id;
++  data->in_use = 0;
++  data->all_caps = 1;
++  *countptr = id+1;
++  sprintf(namebuf,"Psfgen_%d",id);
++  Tcl_SetAssocData(interp,namebuf,psfgen_deleteproc,(ClientData)data);
++  return data;
++}
++
++void psfgen_data_reset(Tcl_Interp *interp, psfgen_data *data) {
++  topo_mol_destroy(data->mol);
++  topo_defs_destroy(data->defs);
++  stringhash_destroy(data->aliases);
++  data->defs = topo_defs_create();
++  topo_defs_error_handler(data->defs,interp,newhandle_msg);
++  data->aliases = stringhash_create();
++  data->mol = topo_mol_create(data->defs);
++  topo_mol_error_handler(data->mol,interp,newhandle_msg);
++  data->all_caps = 1;
++}
++
++int tcl_psfcontext(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_topology(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_segment(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_residue(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_mutate(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_multiply(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_coord(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_auto(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_regenerate(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_alias(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_pdb(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_coordpdb(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_guesscoord(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_readpsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_readplugin(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_writepsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_writepdb(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_writeplugin(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_first(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_last(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_patch(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_resetpsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++int tcl_delatom(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]);
++
++#if defined(PSFGENTCLDLL_EXPORTS) && defined(_WIN32)
++#  undef TCL_STORAGE_CLASS
++#  define TCL_STORAGE_CLASS DLLEXPORT
++
++#define WIN32_LEAN_AND_MEAN /* Exclude rarely-used stuff from Windows headers */
++#include <windows.h>
++
++BOOL APIENTRY DllMain( HANDLE hModule, 
++                       DWORD  ul_reason_for_call, 
++                       LPVOID lpReserved
++                                         )
++{
++    return TRUE;
++}
++
++EXTERN int Psfgen_Init(Tcl_Interp *interp) {
++
++#else
++
++int Psfgen_Init(Tcl_Interp *interp) {
++
++#endif
++
++  /* Create psfgen data structures; keep in interp so that other libraries
++   * can access them.
++   */
++  psfgen_data **data;
++  Tcl_SetAssocData(interp, (char *)"Psfgen_count",0,(ClientData)0);
++  data = (psfgen_data **)malloc(sizeof(psfgen_data *));
++  Tcl_SetAssocData(interp, (char *)"Psfgen_pointer",
++		psfgen_data_delete_pointer,(ClientData)data);
++  *data = psfgen_data_create(interp);
++  (*data)->in_use++;
++
++  Tcl_CreateCommand(interp,"psfcontext",tcl_psfcontext,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"topology",tcl_topology,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"readpsf",tcl_readpsf,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"readmol",tcl_readplugin,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"segment",tcl_segment,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"residue",tcl_residue,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"mutate",tcl_mutate,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"multiply",tcl_multiply,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"coord",tcl_coord,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"auto",tcl_auto,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"regenerate",tcl_regenerate,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"alias",tcl_alias,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"pdbalias",tcl_alias,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"pdb",tcl_pdb,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"coordpdb",tcl_coordpdb,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"guesscoord",tcl_guesscoord,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"writepsf",tcl_writepsf,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"writepdb",tcl_writepdb,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"writemol",tcl_writeplugin,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"first",tcl_first,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"last",tcl_last,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"patch",tcl_patch,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"resetpsf", tcl_resetpsf,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++  Tcl_CreateCommand(interp,"delatom", tcl_delatom,
++	(ClientData)data, (Tcl_CmdDeleteProc*)NULL);
++ 
++  Tcl_PkgProvide(interp, "psfgen", "1.5.0");
++
++#ifdef NAMD_VERSION
++  {
++    char buf[1024];
++    sprintf(buf, "puts \"PSFGEN [package require psfgen] from NAMD %s for %s\"",
++                                             NAMD_VERSION, NAMD_PLATFORM);
++    Tcl_Eval(interp, buf);
++  }
++#endif
++
++  return TCL_OK;
++}
++
++char *strtoupper(const char *str, int all_caps) {
++  char *s, *tmp;
++  tmp = strdup(str);
++  if ( all_caps ) {
++    s=tmp;
++    while ( *s ) { *s = toupper(*s); ++s; }
++  }
++  return tmp;
++}
++
++char* splitcolon(char *s) {
++  if ( s ) {
++    while ( *s && *s != ':' ) { ++s; }
++    if ( *s ) *(s++) = 0; else s = 0;
++  }
++  return s;
++}
++
++/*
++  Old-style calls:
++    set n [psfcontext new]   $n is old context (0)
++    psfcontext new delete    old context (1) is deleted
++    set m [psfcontext]       $m is current context (2)
++    set m [psfcontext $n]    $m is old context (2)
++    psfcontext $m delete     old context (0) is deleted
++
++  How they would have to be used:
++    set mycontext [psfcontext [psfcontext new]]
++    proc a { } {
++      global mycontext
++      set oldcontext [psfcontext $mycontext]
++      set retcode [catch {
++        ... error ...
++      } result] }
++      psfcontext $oldcontext
++      if { $retcode } { error $result; } else { return $result }
++    }
++    psfcontext [psfcontext $mycontext] delete
++
++  New-style calls and usage:
++    psfcontext reset    (clears all state from current context)
++
++    set mycontext [psfcontext create]
++    psfcontext eval $mycontext { ... }
++    psfcontext delete $mycontext
++
++    psfcontext stats    (returns numbers of contexts created and destroyed)
++*/
++
++int tcl_psfcontext(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++
++  int oldid, newid;
++  int delold = 0;
++  psfgen_data **cur = (psfgen_data **)data;
++  char oldidstr[128];
++  oldid = (*cur)->id;
++  sprintf(oldidstr,"%d",oldid);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,oldidstr,TCL_VOLATILE);
++    return TCL_OK;
++  }
++
++  if ( argc == 2 && ! strcmp(argv[1],"stats") ) {
++    char msg[128];
++    int nc, nd, *countptr;
++    nc = 0;  nd = 0;
++    countptr = Tcl_GetAssocData(interp, "Psfgen_count", 0);
++    if (countptr) {
++      nc = countptr[0];
++      nd = countptr[1];
++    }
++    sprintf(msg,"%d created %d destroyed",countptr[0],countptr[1]);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    return TCL_OK;
++  }
++
++  if ( argc == 2 && ! strcmp(argv[1],"allcaps") ) {
++    newhandle_msg(interp,"mapping names to all caps on input");
++    (*cur)->all_caps = 1;
++    return TCL_OK;
++  }
++
++  if ( argc == 2 && ! strcmp(argv[1],"mixedcase") ) {
++    newhandle_msg(interp,"preserving case of names on input");
++    (*cur)->all_caps = 0;
++    return TCL_OK;
++  }
++
++  if ( argc == 2 && ! strcmp(argv[1],"reset") ) {
++    newhandle_msg(interp,"clearing structure, topology, and aliases");
++    if ( ! (*cur)->all_caps ) {
++      newhandle_msg(interp,"mapping names to all caps on input");
++    }
++    psfgen_data_reset(interp,*cur);
++    return TCL_OK;
++  }
++
++  if ( argc == 2 && ! strcmp(argv[1],"create") ) {
++    char msg[128];
++    psfgen_data *newdata = psfgen_data_create(interp);
++    sprintf(msg,"%d",newdata->id);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    return TCL_OK;
++  }
++
++  if ( argc == 3 && ! strcmp(argv[1],"delete") ) {
++    if (Tcl_GetInt(interp,argv[2],&newid) == TCL_OK) {
++      char newkey[128];
++      psfgen_data *newdata;
++      sprintf(newkey,"Psfgen_%d",newid);
++      if ( newdata = Tcl_GetAssocData(interp,newkey,0) ) {
++        if ( newdata->in_use ) {
++          Tcl_SetResult(interp,"specified context in use",TCL_VOLATILE);
++          return TCL_ERROR;
++        }
++        Tcl_DeleteAssocData(interp,newkey);
++        sprintf(newkey,"deleted %d",newid);
++        Tcl_SetResult(interp,newkey,TCL_VOLATILE);
++        return TCL_OK;
++      }
++    }
++    Tcl_SetResult(interp,"specified context does not exist",TCL_VOLATILE);
++    return TCL_ERROR;
++  }
++
++  if ( argc > 1 && ! strcmp(argv[1],"eval") ) {
++    psfgen_data *newdata, *olddata;
++    char newkey[128];
++    int retval;
++    if ( argc != 4 ) {
++      Tcl_SetResult(interp,
++        "usage: psfcontext eval ?context? { ?commmands? }",TCL_VOLATILE);
++      return TCL_ERROR;
++    }
++    if (Tcl_GetInt(interp,argv[2],&newid) != TCL_OK) {
++      Tcl_SetResult(interp,"specified context does not exist",TCL_VOLATILE);
++      return TCL_ERROR;
++    }
++    sprintf(newkey,"Psfgen_%d",newid);
++    newdata = Tcl_GetAssocData(interp,newkey,0);
++    if ( ! newdata ) {
++      Tcl_SetResult(interp,"specified context does not exist",TCL_VOLATILE);
++      return TCL_ERROR;
++    }
++    olddata = *cur;
++    *cur = newdata;
++    (*cur)->in_use++;
++
++    newdata = 0;  /* Tcl_Eval might delete this context and change *cur */
++    retval = Tcl_Eval(interp,argv[3]);
++
++    (*cur)->in_use--;
++    *cur = olddata;
++    return retval;
++  }
++
++  if ( argc == 3 ) {
++    if ( strcmp(argv[2],"delete") == 0 ) {
++      delold = 1;
++    } else {
++      Tcl_SetResult(interp,"second argument must be delete",TCL_VOLATILE);
++      psfgen_kill_mol(interp,*cur);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( delold && (*cur)->in_use > 1 ) {
++    Tcl_SetResult(interp,"current context in use",TCL_VOLATILE);
++    psfgen_kill_mol(interp,*cur);
++    return TCL_ERROR;
++  }
++
++  if ( argc > 3 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,*cur);
++    return TCL_ERROR;
++  }
++
++  if (strcmp(argv[1],"new") == 0) {
++    psfgen_data *newdata = psfgen_data_create(interp);
++    (*cur)->in_use--;
++    *cur = newdata;
++    (*cur)->in_use++;
++  } else if (Tcl_GetInt(interp,argv[1],&newid) == TCL_OK) {
++    psfgen_data *newdata;
++    char newkey[128];
++    if ( newid == oldid ) {
++      if ( delold ) {
++        Tcl_SetResult(interp,"specified context same as current",TCL_VOLATILE);
++        psfgen_kill_mol(interp,*cur);
++        return TCL_ERROR;
++      } else {
++        Tcl_SetResult(interp,oldidstr,TCL_VOLATILE);
++        return TCL_OK;
++      }
++    }
++    sprintf(newkey,"Psfgen_%d",newid);
++    if ( (newdata = Tcl_GetAssocData(interp,newkey,0)) ) {
++      (*cur)->in_use--;
++      *cur = newdata;
++      (*cur)->in_use++;
++    } else {
++      Tcl_SetResult(interp,"specified context does not exist",TCL_VOLATILE);
++      psfgen_kill_mol(interp,*cur);
++      return TCL_ERROR;
++    }
++  } else {
++    Tcl_SetResult(interp,"first argument must be existing context or new",TCL_VOLATILE);
++    psfgen_kill_mol(interp,*cur);
++    return TCL_ERROR;
++  }
++
++  if ( delold ) {
++    char oldkey[128];
++    sprintf(oldkey,"Psfgen_%d",oldid);
++    Tcl_DeleteAssocData(interp,oldkey);
++    sprintf(oldkey,"deleted %d",oldid);
++    Tcl_SetResult(interp,oldkey,TCL_VOLATILE);
++    return TCL_OK;
++  } else {
++    Tcl_SetResult(interp,oldidstr,TCL_VOLATILE);
++    return TCL_OK;
++  }
++
++}
++
++int tcl_topology(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *defs_file;
++  const char *filename;
++  char msg[2048];
++  int itopo,ntopo;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no topology file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if (argc == 2 && !strcasecmp(argv[1], "residues") ) {
++    psfgen_data *psf = *(psfgen_data **)data;
++    topo_defs *defs = psf->defs;
++    /* Return a list of the known residue definitions */
++    int n = hasharray_count(defs->residue_hash);
++    int i;
++    for (i=0; i<n; i++) {
++      if (!defs->residue_array[i].patch)
++        Tcl_AppendElement(interp, defs->residue_array[i].name);
++    }
++    return TCL_OK;
++  } else if (argc == 2 && !strcasecmp(argv[1], "patches") ) {
++    psfgen_data *psf = *(psfgen_data **)data;
++    topo_defs *defs = psf->defs;
++    /* Return a list of the known residue definitions */
++    int n = hasharray_count(defs->residue_hash);
++    int i;
++    for (i=0; i<n; i++) {
++      if (defs->residue_array[i].patch)
++        Tcl_AppendElement(interp, defs->residue_array[i].name);
++    } 
++    return TCL_OK;
++  } else if (argc == 2 && !strcasecmp(argv[1], "list") ) {
++    psfgen_data *psf = *(psfgen_data **)data;
++    topo_defs *defs = psf->mol->defs;
++    topo_defs_topofile_t *topo;
++    ntopo = hasharray_count(defs->topo_hash);
++    for ( itopo=0; itopo<ntopo; ++itopo ) {
++      topo = &(defs->topo_array[itopo]);
++      Tcl_AppendElement(interp, topo->filename);
++    }
++    return TCL_OK;
++  }
++  filename = argv[1];
++  if ( ! ( defs_file = fopen(filename,"r") ) ) {
++    sprintf(msg,"ERROR: Unable to open topology file %s\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  } else {
++    sprintf(msg,"reading topology file %s\n",filename);
++    newhandle_msg(interp,msg);
++    charmm_parse_topo_defs(psf->defs,defs_file,psf->all_caps,interp,newhandle_msg);
++    topo_defs_add_topofile(psf->defs, filename);
++    fclose(defs_file);
++  }
++  return TCL_OK;
++}
++
++int tcl_readpsf(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *psf_file;
++  int retval;
++  const char *filename;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no psf file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  filename = argv[1];
++  /* Open psf as a binary file because the reading code uses ftell and
++     fseek which do not work properly if the file is opened as text
++     on Windows.  fgetpos/fsetpos misbehave in the exact same way.    */
++  if ( ! ( psf_file = fopen(filename,"rb") ) ) {
++    sprintf(msg,"ERROR: Unable to open psf file %s",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  } else {
++    sprintf(msg,"reading structure from psf file %s",filename);
++    newhandle_msg(interp,msg);
++    retval = psf_file_extract(psf->mol, psf_file, interp, newhandle_msg);
++    fclose(psf_file);
++  }
++  if (retval) {
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  return TCL_OK;
++}
++
++
++int tcl_readplugin(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  const char *filename, *pluginname;
++  const char *coorpluginname=0;
++  const char *coorfilename=0;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  char *segid=NULL;
++  int curarg;
++  int coordinatesonly=0;
++  int residuesonly=0;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 3 ) {
++    Tcl_SetResult(interp,"missing file format and/or input filename",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  pluginname = argv[1];
++  filename = argv[2];
++
++  sprintf(msg,"Info: reading file %s using plugin %s", filename, pluginname);
++  newhandle_msg(interp,msg);
++
++  for (curarg=3; curarg<argc; curarg++) {
++    if (!strcmp(argv[curarg], "segment")) {
++      curarg++;
++      if (curarg<argc) {
++        segid = strtoupper(argv[curarg], psf->all_caps);
++        sprintf(msg, "Info: read mode: coordinates for segment %s", segid);
++        newhandle_msg(interp,msg);
++      }
++    } else if (!strcmp(argv[curarg], "coordinatesonly")) {
++      coordinatesonly=1;
++      newhandle_msg(interp, "Info: read mode: coordinates only");
++    } else if (!strcmp(argv[curarg], "residuesonly")) {
++      residuesonly=1;
++      newhandle_msg(interp, "Info: read mode: residue sequence only");
++    } else { /* positional arguments for second coordinate file */
++      if ( curarg == 3 ) coorpluginname = argv[3];
++      if ( curarg == 4 ) coorfilename = argv[4];
++    }
++  }
++
++  if ( coorpluginname && coorpluginname ) {
++    sprintf(msg,"Info: reading coordinates from file %s using plugin %s",
++            coorfilename, coorpluginname);
++    newhandle_msg(interp,msg);
++  }
++
++  if ( topo_mol_read_plugin(psf->mol, pluginname, filename,
++                            coorpluginname, coorfilename,
++                            segid, psf->aliases, psf->all_caps,
++                            coordinatesonly, residuesonly,
++                            interp, newhandle_msg) ) { 
++    if (segid != NULL)
++      free(segid);
++    Tcl_AppendResult(interp,"ERROR: failed reading file", NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  if (segid != NULL)
++    free(segid);
++
++  return TCL_OK;
++}
++
++
++
++
++int tcl_segment(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  char msg[2048];
++  char *seg;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  /* 
++   * special case query commands: 'segment segids', 'segment <segid> first', 
++   * 'segment <segid> last', 'segment <segid> resids', 
++   * 'segment <segid> residue <resid>'
++   */
++  if (argc == 2 && !strcasecmp(argv[1], "segids")) {
++    topo_mol *mol = psf->mol;
++    if (mol) {
++      int i, n=hasharray_count(mol->segment_hash);
++      for (i=0; i<n; i++) {
++        Tcl_AppendElement(interp, mol->segment_array[i]->segid);
++      }
++      return TCL_OK;
++    }
++    /* Return nothing when there's no molecule */
++  } else if (argc == 3 && !strcasecmp(argv[1], "first")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      Tcl_SetResult(interp, seg->pfirst, TCL_VOLATILE);
++      return TCL_OK;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  } else if (argc == 3 && !strcasecmp(argv[1], "last")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      Tcl_SetResult(interp, seg->plast, TCL_VOLATILE);
++      return TCL_OK;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  } else if (argc == 3 && !strcasecmp(argv[1], "resids")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      int n = hasharray_count(seg->residue_hash);
++      int i;
++      for (i=0; i<n; i++) {
++        if (hasharray_index(seg->residue_hash, seg->residue_array[i].resid) != HASHARRAY_FAIL) {
++          Tcl_AppendElement(interp, seg->residue_array[i].resid);
++        }
++      }
++      return TCL_OK;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  } else if (argc == 4 && !strcasecmp(argv[1], "residue")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      int resindex = hasharray_index(seg->residue_hash, argv[3]);
++      if (resindex == HASHARRAY_FAIL) {
++        Tcl_AppendResult(interp, "Invalid resid '", argv[3], "' for segment '",
++            argv[1], "'.", NULL);
++        return TCL_ERROR;
++      }
++      Tcl_SetResult(interp, seg->residue_array[resindex].name, TCL_VOLATILE);
++      return TCL_OK;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  } else if (argc == 4 && !strcasecmp(argv[1], "atoms")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_atom_t *atoms;
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      int resindex = hasharray_index(seg->residue_hash, argv[3]);
++      if (resindex == HASHARRAY_FAIL) {
++        Tcl_AppendResult(interp, "Invalid resid '", argv[3], "' for segment '",
++            argv[1], "'.", NULL);
++        return TCL_ERROR;
++      }
++      atoms = seg->residue_array[resindex].atoms;
++      while (atoms) {
++        Tcl_AppendElement(interp, atoms->name);
++        atoms = atoms->next;
++      }
++      return TCL_OK;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  } else if (argc == 5 && !strcasecmp(argv[1], "coordinates")) {
++    topo_mol *mol = psf->mol;
++    int segindex = (mol ? 
++        hasharray_index(mol->segment_hash, argv[2]) :
++        HASHARRAY_FAIL);
++    if (segindex != HASHARRAY_FAIL) {
++      topo_mol_atom_t *atoms;
++      topo_mol_segment_t *seg = mol->segment_array[segindex];
++      int resindex = hasharray_index(seg->residue_hash, argv[3]);
++      if (resindex == HASHARRAY_FAIL) {
++        Tcl_AppendResult(interp, "Invalid resid '", argv[3], "' for segment '",
++            argv[1], "'.", NULL);
++        return TCL_ERROR;
++      }
++      /*
++       * XXX Ouch, no hasharray for atom names
++       */
++      atoms = seg->residue_array[resindex].atoms;
++      while (atoms) {
++        if (!strcmp(atoms->name, argv[4])) {
++#if TCL_MINOR_VERSION >= 6
++          char buf[512];
++          sprintf(buf, "%f %f %f", atoms->x, atoms->y, atoms->z);
++          Tcl_AppendResult(interp, buf, NULL);
++#else
++          sprintf(interp->result, "%f %f %f", atoms->x, atoms->y, atoms->z);
++#endif
++          return TCL_OK;
++        }
++        atoms = atoms->next;
++      }
++      Tcl_AppendResult(interp, "Invalid atom name '", argv[4], 
++          "' for segid '", argv[2], "', resid '", argv[3], "'.", NULL);
++      return TCL_ERROR;
++    }
++    Tcl_AppendResult(interp, "Invalid segid: ", argv[2], NULL);
++    return TCL_ERROR;
++  }
++
++  /*
++   * Fall through to segment-building commands
++   */
++
++  if ( argc < 3 ) {
++    Tcl_SetResult(interp,"arguments: segname { commmands }",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 3 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  seg=strtoupper(argv[1], psf->all_caps);
++  if ( strlen(seg) > 7 ) {
++    Tcl_SetResult(interp,"segment name more than 7 characters",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  sprintf(msg,"building segment %s",seg);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_segment(psf->mol,seg) ) {
++    free(seg);
++    Tcl_AppendResult(interp,"ERROR: failed on segment",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  free(seg);
++
++  if ( Tcl_Eval(interp,argv[2]) != TCL_OK ) {
++    Tcl_AppendResult(interp,"\nERROR: failed while building segment",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  newhandle_msg(interp,"Info: generating structure...");
++  if ( topo_mol_end(psf->mol) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on end of segment",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  newhandle_msg(interp, "Info: segment complete.");
++  return TCL_OK;
++}
++
++int tcl_residue(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  char *resid, *resname, *chain;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 3 ) {
++    Tcl_SetResult(interp,"arguments: resid resname ?chain?",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 4 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  resid=strtoupper(argv[1], psf->all_caps);
++  resname=strtoupper(argv[2], psf->all_caps);
++  chain=strtoupper(argc==4 ? argv[3] : "", psf->all_caps);
++
++  if ( topo_mol_residue(psf->mol,resid,resname,chain) ) {
++    free(resid);
++    free(resname);
++    Tcl_AppendResult(interp,"ERROR: failed on residue",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  free(resid);
++  free(resname);
++  free(chain);
++  return TCL_OK;
++}
++
++int tcl_mutate(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  psfgen_data *psf = *(psfgen_data **)data;
++  char *resid, *resname;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 3 ) {
++    Tcl_SetResult(interp,"arguments: resid resname",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 3 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  resid=strtoupper(argv[1], psf->all_caps);
++  resname=strtoupper(argv[2], psf->all_caps);
++
++  if ( topo_mol_mutate(psf->mol,resid, resname) ) {
++    free(resid);
++    free(resname);
++    Tcl_AppendResult(interp,"ERROR: failed on mutate",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  free(resid);
++  free(resname);
++
++  return TCL_OK;
++}
++
++int tcl_multiply(ClientData data, Tcl_Interp *interp,
++                                        int argc, CONST84 char *argv[]) {
++  int i, ncopies, ierr;
++  topo_mol_ident_t *targets;
++  char **tmp;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc<3 || Tcl_GetInt(interp,argv[1],&ncopies) != TCL_OK || ncopies<2 ) {
++    Tcl_SetResult(interp,"arguments: ncopies segid?:resid?:atomname? ...",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  targets = (topo_mol_ident_t *) Tcl_Alloc((argc-2)*sizeof(topo_mol_ident_t));
++  if ( ! targets ) {
++    Tcl_SetResult(interp,"memory allocation failed",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  tmp = (char **) Tcl_Alloc((argc-2)*sizeof(char *));
++  if (!tmp) {
++    Tcl_Free((char *)targets);
++    Tcl_SetResult(interp,"memory allocation failed",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  sprintf(msg,"generating %d copies of selected atoms",ncopies);
++  newhandle_msg(interp,msg);
++  for ( i=2; i<argc; ++i ) {
++    char *ctmp;
++    tmp[i-2] = strtoupper(argv[i], psf->all_caps);
++    targets[i-2].segid = ctmp = tmp[i-2];
++    targets[i-2].resid = ctmp = splitcolon(ctmp);
++    targets[i-2].aname = splitcolon(ctmp);
++  }
++  ierr = topo_mol_multiply_atoms(psf->mol,targets,(argc-2),ncopies);
++  for (i=2; i<argc; ++i) free(tmp[i-2]);
++  Tcl_Free((char *)tmp);
++  Tcl_Free((char *)targets);
++  if (ierr) {
++    sprintf(msg,"ERROR: failed to multiply atoms (error=%d)",ierr);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    /* Tcl_AppendResult(interp,"ERROR: failed to multiply atoms",NULL); */
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  return TCL_OK;
++}
++
++int tcl_coord(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  double x,y,z;
++  topo_mol_ident_t target;
++  char *segid, *resid, *atomname;
++  int rc;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 5 ) {
++    Tcl_SetResult(interp,"arguments: segid resid atomname { x y z }",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 5 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( sscanf(argv[4],"%lf %lf %lf",&x,&y,&z) != 3 ) {
++    Tcl_SetResult(interp,"arguments: segid resid atomname { x y z }",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  segid=strtoupper(argv[1], psf->all_caps);
++  resid=strtoupper(argv[2], psf->all_caps);
++  atomname=strtoupper(argv[3], psf->all_caps);
++  target.segid = segid;
++  target.resid = resid;
++  target.aname = atomname;
++  rc = topo_mol_set_xyz(psf->mol,&target,x,y,z);
++  free(segid); 
++  free(resid); 
++  free(atomname);
++  if (rc) {
++    Tcl_AppendResult(interp,"ERROR: failed on coord",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  return TCL_OK;
++}
++
++
++int tcl_auto(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  int i, angles, dihedrals;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: ?angles? ?dihedrals? ?none?",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  angles = 0;  dihedrals = 0;
++  for ( i = 1; i < argc; ++i ) {
++    if ( ! strcmp(argv[i],"angles") ) angles = 1;
++    else if ( ! strcmp(argv[i],"dihedrals") ) dihedrals = 1;
++    else if ( strcmp(argv[i],"none") ) {
++      Tcl_SetResult(interp,"arguments: ?angles? ?dihedrals? ?none?",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( angles ) newhandle_msg(interp,"enabling angle autogeneration");
++  else newhandle_msg(interp,"disabling angle autogeneration");
++  if ( topo_mol_segment_auto_angles(psf->mol,angles) ) {
++    Tcl_AppendResult(interp,"ERROR: failed setting angle autogen",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  if ( dihedrals ) newhandle_msg(interp,"enabling dihedral autogeneration");
++  else newhandle_msg(interp,"disabling dihedral autogeneration");
++  if ( topo_mol_segment_auto_dihedrals(psf->mol,dihedrals) ) {
++    Tcl_AppendResult(interp,"ERROR: failed setting dihedral autogen",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  return TCL_OK;
++}
++
++
++int tcl_regenerate(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  int i, angles, dihedrals;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: ?angles? ?dihedrals? ?none?",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  angles = 0;  dihedrals = 0;
++  for ( i = 1; i < argc; ++i ) {
++    if ( ! strcmp(argv[i],"angles") ) angles = 1;
++    else if ( ! strcmp(argv[i],"dihedrals") ) dihedrals = 1;
++    else {
++      Tcl_SetResult(interp,"arguments: ?angles? ?dihedrals?",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( angles ) {
++    newhandle_msg(interp,"regenerating all angles");
++    if ( topo_mol_regenerate_angles(psf->mol) ) {
++      Tcl_AppendResult(interp,"ERROR: angle regeneration failed",NULL);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( dihedrals ) {
++    newhandle_msg(interp,"regenerating all dihedrals");
++    if ( topo_mol_regenerate_dihedrals(psf->mol) ) {
++      Tcl_AppendResult(interp,"ERROR: dihedral regeneration failed",NULL);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  return TCL_OK;
++}
++
++int tcl_alias(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  int rc;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: atom | residue ...",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  if ( ! strcmp(argv[1],"residue") ) {
++    char *altres, *realres;
++    if ( argc < 4 ) {
++      Tcl_SetResult(interp,"arguments: residue altres realres",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    altres=strtoupper(argv[2], psf->all_caps);
++    realres=strtoupper(argv[3], psf->all_caps);
++    sprintf(msg,"aliasing residue %s to %s",argv[2],argv[3]);
++    newhandle_msg(interp,msg);
++    rc = extract_alias_residue_define(psf->aliases,altres, realres);
++    free(altres);
++    free(realres);
++    if (rc) {
++      Tcl_AppendResult(interp,"ERROR: failed on residue alias",NULL);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  } else if ( ! strcmp(argv[1],"atom") ) {
++    char *resname, *altatom, *realatom;
++    if ( argc < 5 ) {
++      Tcl_SetResult(interp,"arguments: atom resname altatom realatom",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    resname=strtoupper(argv[2], psf->all_caps);
++    altatom=strtoupper(argv[3], psf->all_caps);
++    realatom=strtoupper(argv[4], psf->all_caps);
++    sprintf(msg,"aliasing residue %s atom %s to %s",argv[2],argv[3],argv[4]);
++    newhandle_msg(interp,msg);
++    rc=extract_alias_atom_define(psf->aliases,resname,altatom,realatom);
++    free(resname);
++    free(altatom);
++    free(realatom);
++    if (rc) {
++      Tcl_AppendResult(interp,"ERROR: failed on atom alias",NULL);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  return TCL_OK;
++}
++
++int tcl_pdb(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no pdb file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  filename = argv[1];
++  if ( ! ( res_file = fopen(filename,"r") ) ) {
++    sprintf(msg,"ERROR: Unable to open pdb file %s to read residues\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  } else {
++    sprintf(msg,"reading residues from pdb file %s",filename);
++    newhandle_msg(interp,msg);
++    if ( pdb_file_extract_residues(psf->mol,res_file,psf->aliases,psf->all_caps,interp,newhandle_msg) ) {
++      Tcl_AppendResult(interp,"ERROR: failed on reading residues from pdb file",NULL);
++      fclose(res_file);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    fclose(res_file);
++  }
++
++  return TCL_OK;
++}
++
++int tcl_coordpdb(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  char msg[2048];
++  int rc;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: pdbfile ?segid?",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 3 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  filename = argv[1];
++  if ( ! ( res_file = fopen(filename,"r") ) ) {
++    sprintf(msg,"ERROR: Unable to open pdb file %s to read coordinates\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  } else {
++    char *segid;
++    if (argc == 3) {
++      /* Read only coordinates for given segid */
++      sprintf(msg,"reading coordinates from pdb file %s for segment %s",filename,argv[2]);
++      newhandle_msg(interp,msg);
++      segid = strtoupper(argv[2], psf->all_caps);
++    } else {
++      /* Read all segid's in pdb file */
++      sprintf(msg,"reading coordinates from pdb file %s",filename);
++      newhandle_msg(interp,msg);
++      segid = NULL;
++    } 
++    rc=pdb_file_extract_coordinates(psf->mol,res_file,segid,psf->aliases,psf->all_caps,interp,newhandle_msg);
++    if (segid) free(segid);
++    if (rc) {
++      Tcl_AppendResult(interp,"ERROR: failed on reading coordinates from pdb file",NULL);
++      fclose(res_file);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    fclose(res_file);
++  }
++
++  return TCL_OK;
++
++}
++
++int tcl_guesscoord(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++  if ( argc > 1 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( topo_mol_guess_xyz(psf->mol) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on guessing coordinates",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  return TCL_OK;
++}
++
++int tcl_writepsf(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  int charmmfmt, nocmap, i;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no psf file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 4 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  charmmfmt = 0;
++  nocmap = 0;
++  for ( i = 1; i < argc-1; ++i ) {
++    if ( strcmp(argv[i],"charmm") == 0 ) charmmfmt = 1;
++    else if ( strcmp(argv[i],"x-plor") == 0 ) charmmfmt = 0;
++    else if ( strcmp(argv[i],"cmap") == 0 ) nocmap = 0;
++    else if ( strcmp(argv[i],"nocmap") == 0 ) nocmap = 1;
++    else {
++      sprintf(msg,"ERROR: Unknown psf file format %s (not charmm or x-plor, cmap or nocmap).\n",argv[i]);
++      Tcl_SetResult(interp,msg,TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++  filename = argv[argc-1];
++
++  if ( ! ( res_file = fopen(filename,"w") ) ) {
++    sprintf(msg,"ERROR: Unable to open psf file %s to write structure\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  sprintf(msg,"Info: writing psf file %s%s%s",filename,
++                nocmap?" without cross-terms":"",
++                charmmfmt?" in CHARMM format":"");
++  newhandle_msg(interp,msg);
++  if ( topo_mol_write_psf(psf->mol,res_file,charmmfmt,nocmap,interp,newhandle_msg) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on writing structure to psf file",NULL);
++    fclose(res_file);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  fclose(res_file);
++  newhandle_msg(interp, "Info: psf file complete.");
++
++  return TCL_OK;
++}
++
++int tcl_writepdb(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  FILE *res_file;
++  const char *filename;
++  char msg[2048];
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"no pdb file specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 2 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  filename = argv[1];
++
++  if ( ! ( res_file = fopen(filename,"w") ) ) {
++    sprintf(msg,"ERROR: Unable to open pdb file %s to write coordinates\n",filename);
++    Tcl_SetResult(interp,msg,TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  sprintf(msg,"Info: writing pdb file %s",filename);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_write_pdb(psf->mol,res_file,interp,newhandle_msg) ) {
++    Tcl_AppendResult(interp,"ERROR: failed on writing coordinates to pdb file",NULL);
++    fclose(res_file);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  fclose(res_file);
++  newhandle_msg(interp, "Info: pdb file complete.");
++
++  return TCL_OK;
++}
++
++
++int tcl_writeplugin(ClientData data, Tcl_Interp *interp,
++                    int argc, CONST84 char *argv[]) {
++  const char *filename, *pluginname;
++  char msg[2048];
++  struct image_spec images;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  images.na = 1; images.nb = 1; images.nc = 1;
++  images.ax = 0.; images.ay = 0.; images.az = 0.; 
++  images.bx = 0.; images.by = 0.; images.bz = 0.; 
++  images.cx = 0.; images.cy = 0.; images.cz = 0.; 
++
++  if ( argc == 1 ) {
++    Tcl_SetResult(interp,"arguments: format filename ?na { x y z }? ?nb { x y z }? ?nc { x y z }?",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc < 3 ) {
++    Tcl_SetResult(interp,"missing file format and/or output filename",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  pluginname = argv[1]; 
++  filename = argv[2];
++
++  if ( argc > 3 ) {
++    if ( sscanf(argv[3],"%d",&images.na) != 1 || images.na < 1 ) {
++      Tcl_SetResult(interp,"image count not a positive integer",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( argc == 4 ) {
++      Tcl_SetResult(interp,"image count without offset vector",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( sscanf(argv[4],"%lf %lf %lf",&images.ax,&images.ay,&images.az) != 3 ) {
++      Tcl_SetResult(interp,"bad image offset vector format",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( argc > 5 ) {
++    if ( sscanf(argv[5],"%d",&images.nb) != 1 || images.nb < 1 ) {
++      Tcl_SetResult(interp,"image count not a positive integer",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( argc == 6 ) {
++      Tcl_SetResult(interp,"image count without offset vector",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( sscanf(argv[6],"%lf %lf %lf",&images.bx,&images.by,&images.bz) != 3 ) {
++      Tcl_SetResult(interp,"bad image offset vector format",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( argc > 7 ) {
++    if ( sscanf(argv[7],"%d",&images.nc) != 1 || images.nc < 1 ) {
++      Tcl_SetResult(interp,"image count not a positive integer",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( argc == 8 ) {
++      Tcl_SetResult(interp,"image count without offset vector",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++    if ( sscanf(argv[8],"%lf %lf %lf",&images.cx,&images.cy,&images.cz) != 3 ) {
++      Tcl_SetResult(interp,"bad image offset vector format",TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++
++  if ( argc > 9 ) {
++    Tcl_SetResult(interp,"too many arguments specified",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  sprintf(msg,"Info: writing file %s using plugin %s", filename, pluginname);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_write_plugin(psf->mol, pluginname, filename, &images, interp, newhandle_msg) ) {
++    Tcl_AppendResult(interp,"ERROR: failed writing to file", NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  newhandle_msg(interp, "Info: file complete.");
++
++  return TCL_OK;
++}
++
++
++int tcl_first(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  char msg[2048];
++  char *first;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc != 2 ) {
++    Tcl_SetResult(interp,"argument: presname",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  first = strtoupper(argv[1], psf->all_caps);
++
++  sprintf(msg,"setting patch for first residue to %s",first);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_segment_first(psf->mol,first) ) {
++    free(first);
++    Tcl_AppendResult(interp,"ERROR: failed to set patch for first residue",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  free(first);
++
++  return TCL_OK;
++}
++
++int tcl_last(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  char msg[2048];
++  char *last;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc != 2 ) {
++    Tcl_SetResult(interp,"argument: presname",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  last=strtoupper(argv[1], psf->all_caps);
++
++  sprintf(msg,"setting patch for last residue to %s",last);
++  newhandle_msg(interp,msg);
++  if ( topo_mol_segment_last(psf->mol,last) ) {
++    free(last);
++    Tcl_AppendResult(interp,"ERROR: failed to set patch for last residue",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  free(last);
++  return TCL_OK;
++}
++
++static int tcl_num_patch_targets(psfgen_data *psf, Tcl_Interp *interp,
++    const char *presname) {
++
++  topo_defs_residue_t *resdef;
++  topo_defs_atom_t *atomdef;
++  topo_defs_bond_t *bonddef;
++  topo_defs_angle_t *angledef;
++  topo_defs_dihedral_t *diheddef;
++  topo_defs_improper_t *imprdef;
++  int idef;
++
++  topo_defs *defs = psf->defs;
++  int maxres = 0;
++
++  {
++    char *pres = strtoupper(presname, psf->all_caps);
++    idef = hasharray_index(defs->residue_hash, pres);
++    free(pres);
++  }
++  if (idef == HASHARRAY_FAIL) {
++    Tcl_AppendResult(interp, "No such patch residue: '", presname, "'.", NULL);
++    return TCL_ERROR;
++  }
++
++  resdef = &(defs->residue_array[idef]);
++  if (!resdef->patch) {
++    Tcl_AppendResult(interp, "Residue '", presname, "' is not  patch.", NULL);
++    return TCL_ERROR;
++  }
++
++  for (atomdef = resdef->atoms; atomdef; atomdef = atomdef->next) {
++    if (atomdef->res > maxres) maxres = atomdef->res;
++  }
++  for (bonddef = resdef->bonds; bonddef; bonddef = bonddef->next) {
++    if (bonddef->res1 > maxres) maxres = bonddef->res1;
++    if (bonddef->res2 > maxres) maxres = bonddef->res2;
++  }
++  for (angledef = resdef->angles; angledef; angledef = angledef->next) {
++    if (angledef->res1 > maxres) maxres = angledef->res1;
++    if (angledef->res2 > maxres) maxres = angledef->res2;
++    if (angledef->res3 > maxres) maxres = angledef->res3;
++  }
++  for (diheddef = resdef->dihedrals; diheddef; diheddef = diheddef->next) {
++    if (diheddef->res1 > maxres) maxres = diheddef->res1;
++    if (diheddef->res2 > maxres) maxres = diheddef->res2;
++    if (diheddef->res3 > maxres) maxres = diheddef->res3;
++    if (diheddef->res4 > maxres) maxres = diheddef->res4;
++  }
++  for (imprdef = resdef->impropers; imprdef; imprdef = imprdef->next) {
++    if (imprdef->res1 > maxres) maxres = imprdef->res1;
++    if (imprdef->res2 > maxres) maxres = imprdef->res2;
++    if (imprdef->res3 > maxres) maxres = imprdef->res3;
++    if (imprdef->res4 > maxres) maxres = imprdef->res4;
++  }
++  Tcl_SetObjResult(interp, Tcl_NewIntObj(maxres+1));
++  return TCL_OK;
++}
++
++int tcl_patch(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  int i, j, rc, ipres, listall=0;
++  topo_mol_ident_t targets[10];
++  char *tmp[10];
++  char *pres;
++  char msg[2048];
++  topo_mol_patch_t *patch;
++  topo_mol_patchres_t *patchres;
++  Tcl_Obj *tcl_result;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  tcl_result = Tcl_NewListObj(0, NULL);
++
++  if (argc == 3 && !strcasecmp(argv[1], "targets")) {
++    return tcl_num_patch_targets(psf, interp, argv[2]);
++  }
++
++  if ( argc == 2 && (!strcasecmp(argv[1], "list") || !strcasecmp(argv[1], "listall"))) {
++    if (!strcasecmp(argv[1], "listall")) listall = 1;
++    for ( patch = psf->mol->patches; patch; patch = patch->next ) {
++      Tcl_Obj *patchlist = Tcl_NewListObj(0,NULL);
++      ipres = 0;
++      /* Only list all patches when 'patch listall' was invoked */
++      if (patch->deflt && !listall) continue;
++
++      for ( patchres = patch->patchresids; patchres; patchres = patchres->next ) {
++	/* Test the existence of segid:resid for the patch */
++	if (!topo_mol_validate_patchres(psf->mol,patch->pname,patchres->segid, patchres->resid)) {
++	  break;
++	};
++	
++	if (ipres==0) {
++	  Tcl_ListObjAppendElement(interp, patchlist, Tcl_NewStringObj(patch->pname, -1));
++	}
++	Tcl_ListObjAppendElement(interp, patchlist, Tcl_NewStringObj(patchres->segid, -1));
++	Tcl_ListObjAppendElement(interp, patchlist, Tcl_NewStringObj(patchres->resid, -1));
++	ipres++;
++      }
++      Tcl_ListObjAppendElement(interp, tcl_result, patchlist);
++    }
++    Tcl_SetObjResult(interp, tcl_result);  
++    return TCL_OK;
++  }
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: list | presname segid:resid ...",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  if ( argc > 10 ) {
++    Tcl_SetResult(interp,"too many targets for patch",TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++  pres=strtoupper(argv[1], psf->all_caps);
++  sprintf(msg,"applying patch %s to %d residues",pres,(argc-2));
++  newhandle_msg(interp,msg);
++  for ( i=2; i<argc; ++i ) {
++    tmp[i-2]=strtoupper(argv[i], psf->all_caps);
++    targets[i-2].segid = tmp[i-2];
++    targets[i-2].resid = splitcolon(tmp[i-2]);
++    targets[i-2].aname = 0;
++    if ( ! targets[i-2].resid ) {
++      for (j=0; j<i-2; j++) free(tmp[j]);
++      sprintf(msg,"ERROR: resid missing from patch target %s",tmp[i-2]);
++      Tcl_SetResult(interp,msg,TCL_VOLATILE);
++      psfgen_kill_mol(interp,psf);
++      return TCL_ERROR;
++    }
++  }
++  rc=topo_mol_patch(psf->mol,targets,(argc-2),pres,0,0,0,0);
++  free(pres);
++  for (j=0; j<argc-2; j++) free(tmp[j]);
++  if (rc) {
++    Tcl_AppendResult(interp,"ERROR: failed to apply patch",NULL);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  return TCL_OK;
++}
++
++int tcl_resetpsf(ClientData data, Tcl_Interp *interp, int argc, CONST84 char *argv[]) {
++  psfgen_data *psf = *(psfgen_data **)data;
++
++  newhandle_msg(interp,"clearing structure, preserving topology and aliases");
++  topo_mol_destroy(psf->mol);
++  psf->mol = topo_mol_create(psf->defs);
++  topo_mol_error_handler(psf->mol,interp,newhandle_msg);
++
++  return TCL_OK;
++}
++
++int tcl_delatom(ClientData data, Tcl_Interp *interp,
++					int argc, CONST84 char *argv[]) {
++  topo_mol_ident_t target;
++  psfgen_data *psf = *(psfgen_data **)data;
++  PSFGEN_TEST_MOL(interp,psf);
++
++  if ( argc < 2 ) {
++    Tcl_SetResult(interp,"arguments: segid [ resid? [ aname? ]]", TCL_VOLATILE);
++    psfgen_kill_mol(interp,psf);
++    return TCL_ERROR;
++  }
++
++  target.segid = argv[1];
++  target.resid = argc > 2 ? argv[2] : 0;
++  target.aname = argc > 3 ? argv[3] : 0;
++
++  topo_mol_delete_atom(psf->mol, &target);
++ 
++  return TCL_OK;
++}
++ 
++#endif
++
+diff -rupN NAMD_2.8_Source/psfgen/src/topo_mol.c NAMD_2.8_Source_mod/psfgen/src/topo_mol.c
+--- NAMD_2.8_Source/psfgen/src/topo_mol.c	2011-01-12 14:46:02.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/topo_mol.c	2011-08-11 16:03:59.000000000 -0400
+@@ -371,6 +371,13 @@ topo_mol_improper_t * topo_mol_improper_
+   return 0;
+ }
+ 
++
++topo_mol_chargegroup_t * topo_mol_chargegroup_next(
++		topo_mol_chargegroup_t *group, topo_mol_atom_t *atom) {
++  if ( group->atom == atom ) return group->next;
++  return 0;
++}
++
+ topo_mol_cmap_t * topo_mol_cmap_next(
+ 		topo_mol_cmap_t *tuple, topo_mol_atom_t *atom) {
+   if ( tuple->atom[0] == atom ) return tuple->next[0];
+diff -rupN NAMD_2.8_Source/psfgen/src/topo_mol.c.orig NAMD_2.8_Source_mod/psfgen/src/topo_mol.c.orig
+--- NAMD_2.8_Source/psfgen/src/topo_mol.c.orig	1969-12-31 19:00:00.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/topo_mol.c.orig	2011-01-12 14:46:02.000000000 -0500
+@@ -0,0 +1,2516 @@
++
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include "topo_defs_struct.h"
++#include "topo_mol_struct.h"
++
++#ifdef WIN32
++#define strcasecmp  stricmp
++#define strncasecmp strnicmp
++#endif
++
++topo_mol * topo_mol_create(topo_defs *defs) {
++  topo_mol *mol;
++  if ( ! defs ) return 0;
++  if ( (mol = (topo_mol*) malloc(sizeof(topo_mol))) ) {
++    mol->newerror_handler_data = 0;
++    mol->newerror_handler = 0;
++    mol->defs = defs;
++    mol->npatch = 0;
++    mol->patches = 0;
++    mol->curpatch = 0;
++    mol->segment_hash = hasharray_create(
++	(void**) &(mol->segment_array), sizeof(topo_mol_segment_t*));
++    mol->buildseg = 0;
++    mol->arena = memarena_create();
++    if ( ! mol->segment_hash || ! mol->arena ) {
++      topo_mol_destroy(mol);
++      return 0;
++    }
++  }
++  return mol;
++}
++
++void topo_mol_destroy(topo_mol *mol) {
++  int i,n;
++  topo_mol_segment_t *s;
++  
++  if ( ! mol ) return;
++
++  n = hasharray_count(mol->segment_hash);
++  for ( i=0; i<n; ++i ) {
++    s = mol->segment_array[i];
++    if ( ! s ) continue;
++    hasharray_destroy(s->residue_hash);
++  }
++  hasharray_destroy(mol->segment_hash);
++  memarena_destroy(mol->arena);
++  free((void*)mol);
++}
++
++void topo_mol_error_handler(topo_mol *mol, void *v, void (*print_msg)(void *,const char *)) {
++  if ( mol ) {
++    mol->newerror_handler = print_msg;
++    mol->newerror_handler_data = v;
++  }
++}
++
++/* internal method */
++static void topo_mol_log_error(topo_mol *mol, const char *msg) {
++  if (mol && msg && mol->newerror_handler)
++    mol->newerror_handler(mol->newerror_handler_data, msg);
++}
++
++static topo_mol_segment_t * topo_mol_get_seg(topo_mol *mol,
++			const topo_mol_ident_t *target) {
++  int iseg;
++  char errmsg[64 + 3*NAMEMAXLEN];
++
++  if ( ! mol ) return 0;
++  iseg = hasharray_index(mol->segment_hash,target->segid);
++  if ( iseg == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"no segment %s",target->segid);
++    topo_mol_log_error(mol,errmsg);
++    return 0;
++  }
++  return mol->segment_array[iseg];
++}
++
++static topo_mol_residue_t * topo_mol_get_res(topo_mol *mol,
++			const topo_mol_ident_t *target, int irel) {
++  int nres, ires;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  char errmsg[64 + 3*NAMEMAXLEN];
++  seg = topo_mol_get_seg(mol,target);
++  if ( ! seg ) return 0;
++  nres = hasharray_count(seg->residue_hash);
++  ires = hasharray_index(seg->residue_hash,target->resid);
++  if ( ires == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"no residue %s of segment %s",
++					target->resid,target->segid);
++    topo_mol_log_error(mol,errmsg);
++    return 0;
++  }
++  if ( (ires+irel) < 0 || (ires+irel) >= nres ) {
++    res = seg->residue_array + ires;
++    if ( irel < 0 )
++      sprintf(errmsg,"no residue %d before %s:%s of segment %s",
++		-1*irel,res->name,res->resid,target->segid);
++    if ( irel > 0 )
++      sprintf(errmsg,"no residue %d past %s:%s of segment %s",
++		irel,res->name,res->resid,target->segid);
++    topo_mol_log_error(mol,errmsg);
++    return 0;
++  }
++
++  return (seg->residue_array + ires + irel);
++}
++
++static topo_mol_atom_t * topo_mol_get_atom(topo_mol *mol,
++			const topo_mol_ident_t *target, int irel) {
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom;
++  char errmsg[64 + 3*NAMEMAXLEN];
++  res = topo_mol_get_res(mol,target,irel);
++  if ( ! res ) return 0;
++  for ( atom = res->atoms; atom; atom = atom->next ) {
++    if ( ! strcmp(target->aname,atom->name) ) break;
++  }
++  if ( ! atom ) {
++    sprintf(errmsg,"no atom %s in residue %s:%s of segment %s",
++		target->aname,res->name,res->resid,target->segid);
++    topo_mol_log_error(mol,errmsg);
++  }
++  return atom;
++}
++
++static topo_mol_atom_t *topo_mol_get_atom_from_res(
++    const topo_mol_residue_t *res, const char *aname) {
++  topo_mol_atom_t *atom;
++  for ( atom = res->atoms; atom; atom = atom->next ) {
++    if ( ! strcmp(aname,atom->name) ) break;
++  }
++  return atom;
++}
++
++int topo_mol_segment(topo_mol *mol, const char *segid) {
++  int i;
++  topo_mol_segment_t *newitem;
++  char errmsg[32 + NAMEMAXLEN];
++  if ( ! mol ) return -1;
++  mol->buildseg = 0;
++  if ( NAMETOOLONG(segid) ) return -2;
++  if ( ( i = hasharray_index(mol->segment_hash,segid) ) != HASHARRAY_FAIL ) {
++    sprintf(errmsg,"duplicate segment key %s",segid);
++    topo_mol_log_error(mol,errmsg);
++    return -3;
++  } else {
++    i = hasharray_insert(mol->segment_hash,segid);
++    if ( i == HASHARRAY_FAIL ) return -4;
++    newitem = mol->segment_array[i] = (topo_mol_segment_t*)
++		memarena_alloc(mol->arena,sizeof(topo_mol_segment_t));
++    if ( ! newitem ) return -5;
++  }
++  strcpy(newitem->segid,segid);
++  newitem->residue_hash = hasharray_create(
++	(void**) &(newitem->residue_array), sizeof(topo_mol_residue_t));
++  strcpy(newitem->pfirst,"");
++  strcpy(newitem->plast,"");
++  newitem->auto_angles = mol->defs->auto_angles;
++  newitem->auto_dihedrals = mol->defs->auto_dihedrals;
++  mol->buildseg = newitem;
++  return 0;
++}
++
++int topo_mol_segment_first(topo_mol *mol, const char *rname) {
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for first patch");
++    return -1;
++  }
++  if ( NAMETOOLONG(rname) ) return -2;
++  strcpy(mol->buildseg->pfirst,rname);
++  return 0;
++}
++
++int topo_mol_segment_last(topo_mol *mol, const char *rname) {
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for last patch");
++    return -1;
++  }
++  if ( NAMETOOLONG(rname) ) return -2;
++  strcpy(mol->buildseg->plast,rname);
++  return 0;
++}
++
++int topo_mol_segment_auto_angles(topo_mol *mol, int autogen) {
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for auto angles");
++    return -1;
++  }
++  mol->buildseg->auto_angles = autogen;
++  return 0;
++}
++
++int topo_mol_segment_auto_dihedrals(topo_mol *mol, int autogen) {
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for auto dihedrals");
++    return -1;
++  }
++  mol->buildseg->auto_dihedrals = autogen;
++  return 0;
++}
++
++int topo_mol_residue(topo_mol *mol, const char *resid, const char *rname,
++						const char *chain) {
++  int i;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *newitem;
++  char errmsg[32 + NAMEMAXLEN];
++
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for residue");
++    return -1;
++  }
++  seg = mol->buildseg;
++  if ( NAMETOOLONG(resid) ) return -2;
++  if ( NAMETOOLONG(rname) ) return -3;
++  if ( hasharray_index(seg->residue_hash,resid) != HASHARRAY_FAIL ) {
++    sprintf(errmsg,"duplicate residue key %s",resid);
++    topo_mol_log_error(mol,errmsg);
++    return -3;
++  }
++
++  if ( hasharray_index(mol->defs->residue_hash,rname) == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"unknown residue type %s",rname);
++    topo_mol_log_error(mol,errmsg);
++  }
++
++  i = hasharray_insert(seg->residue_hash,resid);
++  if ( i == HASHARRAY_FAIL ) return -4;
++  newitem = &(seg->residue_array[i]);
++  strcpy(newitem->resid,resid);
++  strcpy(newitem->name,rname);
++  strcpy(newitem->chain,chain);
++  newitem->atoms = 0;
++
++  return 0;
++}
++
++int topo_mol_mutate(topo_mol *mol, const char *resid, const char *rname) {
++  int ires;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  char errmsg[32 + 3*NAMEMAXLEN];
++
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for mutate");
++    return -1;
++  }
++  seg = mol->buildseg;
++
++  if ( NAMETOOLONG(resid) ) return -2;
++  if ( NAMETOOLONG(rname) ) return -3;
++  ires = hasharray_index(seg->residue_hash,resid);
++  if ( ires == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"residue %s does not exist",resid);
++    topo_mol_log_error(mol,errmsg);
++    return -1;
++  }
++  res = seg->residue_array + ires;
++  sprintf(errmsg,"mutating residue %s from %s to %s",resid,res->name,rname);
++  topo_mol_log_error(mol,errmsg);
++
++  if ( hasharray_index(mol->defs->residue_hash,rname) == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"unknown residue type %s",rname);
++    topo_mol_log_error(mol,errmsg);
++  }
++
++  strcpy(res->name,rname);
++
++  return 0;
++}
++
++static topo_mol_atom_t * topo_mol_unlink_atom(
++		topo_mol_atom_t **atoms, const char *aname) {
++  topo_mol_atom_t **atom;
++  topo_mol_atom_t *oldatom;
++  if ( ! atoms ) return 0;
++  for ( atom = atoms ; *atom; atom = &((*atom)->next) ) {
++    if ( ! strcmp(aname,(*atom)->name) ) break;
++  }
++  oldatom = *atom;
++  if ( *atom ) *atom = ((*atom)->next);
++  return oldatom;
++}
++
++static int topo_mol_add_atom(topo_mol *mol, topo_mol_atom_t **atoms,
++		topo_mol_atom_t **oldatoms, topo_defs_atom_t *atomdef) {
++  int idef;
++  topo_mol_atom_t *atomtmp;
++  topo_defs_type_t *atype;
++  char errmsg[128];
++  if ( ! mol || ! atoms ) return -1;
++  atomtmp = 0;
++  if ( oldatoms ) atomtmp = topo_mol_unlink_atom(oldatoms,atomdef->name);
++  if ( ! atomtmp ) {
++    atomtmp = memarena_alloc(mol->arena,sizeof(topo_mol_atom_t));
++    if ( ! atomtmp ) return -2;
++    strcpy(atomtmp->name,atomdef->name);
++    atomtmp->bonds = 0;
++    atomtmp->angles = 0;
++    atomtmp->dihedrals = 0;
++    atomtmp->impropers = 0;
++    atomtmp->cmaps = 0;
++    atomtmp->conformations = 0;
++    atomtmp->x = 0;
++    atomtmp->y = 0;
++    atomtmp->z = 0;
++    atomtmp->xyz_state = TOPO_MOL_XYZ_VOID;
++    atomtmp->partition = 0;
++    atomtmp->atomid = 0;
++  }
++  atomtmp->copy = 0;
++  atomtmp->next = *atoms;
++  atomtmp->charge = atomdef->charge;
++  strcpy(atomtmp->type,atomdef->type);
++  strcpy(atomtmp->element,"");
++  atomtmp->mass = 0;
++  idef = hasharray_index(mol->defs->type_hash,atomtmp->type);
++  if ( idef == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"unknown atom type %s",atomtmp->type);
++    topo_mol_log_error(mol,errmsg);
++    return -3;
++  } else {
++    atype = &(mol->defs->type_array[idef]);
++    strcpy(atomtmp->element,atype->element);
++    atomtmp->mass = atype->mass;
++  }
++  *atoms = atomtmp;
++  return 0;
++}
++
++topo_mol_bond_t * topo_mol_bond_next(
++		topo_mol_bond_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  return 0;
++}
++
++topo_mol_angle_t * topo_mol_angle_next(
++		topo_mol_angle_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  if ( tuple->atom[2] == atom ) return tuple->next[2];
++  return 0;
++}
++
++topo_mol_dihedral_t * topo_mol_dihedral_next(
++		topo_mol_dihedral_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  if ( tuple->atom[2] == atom ) return tuple->next[2];
++  if ( tuple->atom[3] == atom ) return tuple->next[3];
++  return 0;
++}
++
++topo_mol_improper_t * topo_mol_improper_next(
++		topo_mol_improper_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  if ( tuple->atom[2] == atom ) return tuple->next[2];
++  if ( tuple->atom[3] == atom ) return tuple->next[3];
++  return 0;
++}
++
++topo_mol_cmap_t * topo_mol_cmap_next(
++		topo_mol_cmap_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  if ( tuple->atom[2] == atom ) return tuple->next[2];
++  if ( tuple->atom[3] == atom ) return tuple->next[3];
++  if ( tuple->atom[4] == atom ) return tuple->next[4];
++  if ( tuple->atom[5] == atom ) return tuple->next[5];
++  if ( tuple->atom[6] == atom ) return tuple->next[6];
++  if ( tuple->atom[7] == atom ) return tuple->next[7];
++  return 0;
++}
++
++static topo_mol_conformation_t * topo_mol_conformation_next(
++		topo_mol_conformation_t *tuple, topo_mol_atom_t *atom) {
++  if ( tuple->atom[0] == atom ) return tuple->next[0];
++  if ( tuple->atom[1] == atom ) return tuple->next[1];
++  if ( tuple->atom[2] == atom ) return tuple->next[2];
++  if ( tuple->atom[3] == atom ) return tuple->next[3];
++  return 0;
++}
++
++static void topo_mol_destroy_atom(topo_mol_atom_t *atom) {
++  topo_mol_bond_t *bondtmp;
++  topo_mol_angle_t *angletmp;
++  topo_mol_dihedral_t *dihetmp;
++  topo_mol_improper_t *imprtmp;
++  topo_mol_cmap_t *cmaptmp;
++  topo_mol_conformation_t *conftmp;
++  if ( ! atom ) return;
++  for ( bondtmp = atom->bonds; bondtmp;
++		bondtmp = topo_mol_bond_next(bondtmp,atom) ) {
++    bondtmp->del = 1;
++  }
++  for ( angletmp = atom->angles; angletmp;
++		angletmp = topo_mol_angle_next(angletmp,atom) ) {
++    angletmp->del = 1;
++  }
++  for ( dihetmp = atom->dihedrals; dihetmp;
++		dihetmp = topo_mol_dihedral_next(dihetmp,atom) ) {
++    dihetmp->del = 1;
++  }
++  for ( imprtmp = atom->impropers; imprtmp;
++		imprtmp = topo_mol_improper_next(imprtmp,atom) ) {
++    imprtmp->del = 1;
++  }
++  for ( cmaptmp = atom->cmaps; cmaptmp;
++		cmaptmp = topo_mol_cmap_next(cmaptmp,atom) ) {
++    cmaptmp->del = 1;
++  }
++  for ( conftmp = atom->conformations; conftmp;
++		conftmp = topo_mol_conformation_next(conftmp,atom) ) {
++    conftmp->del = 1;
++  }
++}
++
++static void topo_mol_del_atom(topo_mol_residue_t *res, const char *aname) {
++  if ( ! res ) return;
++  topo_mol_destroy_atom(topo_mol_unlink_atom(&(res->atoms),aname));
++}
++
++/*
++ * The add_xxx_to_residues routines exist because topo_mol_end can do
++ * more intelligent error checking than what's done in the add_xxx
++ * routines.  The add_xxx routines are called by topo_mol_patch, which
++ * has to be more general (and more paranoid) about its input.  Returning
++ * nonzero from add_xxx_to_residues is always a serious error.
++ */
++static int add_bond_to_residues(topo_mol *mol, 
++    const topo_mol_residue_t *res1, const char *aname1,
++    const topo_mol_residue_t *res2, const char *aname2) {
++  topo_mol_bond_t *tuple;
++  topo_mol_atom_t *a1, *a2;
++
++  a1 = topo_mol_get_atom_from_res(res1, aname1);
++  a2 = topo_mol_get_atom_from_res(res2, aname2);
++  if (!a1 || !a2) return -1;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_bond_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->bonds;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->bonds;
++  tuple->atom[1] = a2;
++  tuple->del = 0;
++  a1->bonds = tuple;
++  a2->bonds = tuple;
++  return 0;
++}
++
++static int topo_mol_add_bond(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_bond_t *def) {
++  topo_mol_bond_t *tuple;
++  topo_mol_atom_t *a1, *a2;
++  topo_mol_ident_t t1, t2;
++  if (! mol) return -1;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return -2;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return -3;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return -4;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( ! a2 ) return -5;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_bond_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->bonds;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->bonds;
++  tuple->atom[1] = a2;
++  tuple->del = 0;
++  a1->bonds = tuple;
++  a2->bonds = tuple;
++  return 0;
++}
++
++static void topo_mol_del_bond(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_bond_t *def) {
++  topo_mol_bond_t *tuple;
++  topo_mol_atom_t *a1, *a2;
++  topo_mol_ident_t t1, t2;
++  if (! mol) return;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  for ( tuple = a1->bonds; tuple;
++		tuple = topo_mol_bond_next(tuple,a1) ) {
++    if ( tuple->atom[0] == a1 && tuple->atom[1] == a2 ) tuple->del = 1;
++    if ( tuple->atom[0] == a2 && tuple->atom[1] == a1 ) tuple->del = 1;
++  }
++}
++
++
++static int topo_mol_add_angle(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_angle_t *def) {
++  topo_mol_angle_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3;
++  topo_mol_ident_t t1, t2, t3;
++  if (! mol) return -1;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return -2;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return -3;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return -4;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( ! a2 ) return -5;
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return -6;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( ! a3 ) return -7;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_angle_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->angles;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->angles;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->angles;
++  tuple->atom[2] = a3;
++  tuple->del = 0;
++  a1->angles = tuple;
++  a2->angles = tuple;
++  a3->angles = tuple;
++  return 0;
++}
++
++static void topo_mol_del_angle(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_angle_t *def) {
++  topo_mol_angle_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3;
++  topo_mol_ident_t t1, t2, t3;
++  if (! mol) return;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  for ( tuple = a1->angles; tuple;
++		tuple = topo_mol_angle_next(tuple,a1) ) {
++    if ( tuple->atom[0] == a1 && tuple->atom[1] == a2
++	&& tuple->atom[2] == a3 ) tuple->del = 1;
++    if ( tuple->atom[0] == a3 && tuple->atom[1] == a2
++	&& tuple->atom[2] == a1 ) tuple->del = 1;
++  }
++}
++
++
++static int topo_mol_add_dihedral(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_dihedral_t *def) {
++  topo_mol_dihedral_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return -1;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return -2;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return -3;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return -4;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( ! a2 ) return -5;
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return -6;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( ! a3 ) return -7;
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return -8;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  if ( ! a4 ) return -9;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_dihedral_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->dihedrals;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->dihedrals;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->dihedrals;
++  tuple->atom[2] = a3;
++  tuple->next[3] = a4->dihedrals;
++  tuple->atom[3] = a4;
++  tuple->del = 0;
++  a1->dihedrals = tuple;
++  a2->dihedrals = tuple;
++  a3->dihedrals = tuple;
++  a4->dihedrals = tuple;
++  return 0;
++}
++
++static void topo_mol_del_dihedral(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_dihedral_t *def) {
++  topo_mol_dihedral_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  for ( tuple = a1->dihedrals; tuple;
++		tuple = topo_mol_dihedral_next(tuple,a1) ) {
++    if ( tuple->atom[0] == a1 && tuple->atom[1] == a2
++	&& tuple->atom[2] == a3 && tuple->atom[3] == a4 ) tuple->del = 1;
++    if ( tuple->atom[0] == a4 && tuple->atom[1] == a3
++	&& tuple->atom[2] == a2 && tuple->atom[3] == a1 ) tuple->del = 1;
++  }
++}
++
++static int add_improper_to_residues(topo_mol *mol, 
++    const topo_mol_residue_t *res1, const char *aname1,
++    const topo_mol_residue_t *res2, const char *aname2,
++    const topo_mol_residue_t *res3, const char *aname3,
++    const topo_mol_residue_t *res4, const char *aname4) {
++  topo_mol_improper_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++
++  a1 = topo_mol_get_atom_from_res(res1, aname1);
++  a2 = topo_mol_get_atom_from_res(res2, aname2);
++  a3 = topo_mol_get_atom_from_res(res3, aname3);
++  a4 = topo_mol_get_atom_from_res(res4, aname4);
++  if (!a1 || !a2 || !a3 || !a4) return -1;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_improper_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->impropers;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->impropers;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->impropers;
++  tuple->atom[2] = a3;
++  tuple->next[3] = a4->impropers;
++  tuple->atom[3] = a4;
++  tuple->del = 0;
++  a1->impropers = tuple;
++  a2->impropers = tuple;
++  a3->impropers = tuple;
++  a4->impropers = tuple;
++  return 0;
++}
++
++static int topo_mol_add_improper(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_improper_t *def) {
++  topo_mol_improper_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return -1;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return -2;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return -3;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return -4;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( ! a2 ) return -5;
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return -6;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( ! a3 ) return -7;
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return -8;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  if ( ! a4 ) return -9;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_improper_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->impropers;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->impropers;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->impropers;
++  tuple->atom[2] = a3;
++  tuple->next[3] = a4->impropers;
++  tuple->atom[3] = a4;
++  tuple->del = 0;
++  a1->impropers = tuple;
++  a2->impropers = tuple;
++  a3->impropers = tuple;
++  a4->impropers = tuple;
++  return 0;
++}
++
++static void topo_mol_del_improper(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_improper_t *def) {
++  topo_mol_improper_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  for ( tuple = a1->impropers; tuple;
++		tuple = topo_mol_improper_next(tuple,a1) ) {
++    if ( tuple->atom[0] == a1 && tuple->atom[1] == a2
++	&& tuple->atom[2] == a3 && tuple->atom[3] == a4 ) tuple->del = 1;
++    if ( tuple->atom[0] == a4 && tuple->atom[1] == a3
++	&& tuple->atom[2] == a2 && tuple->atom[3] == a1 ) tuple->del = 1;
++  }
++}
++
++static int add_cmap_to_residues(topo_mol *mol, 
++    const topo_mol_residue_t *resl[8], const char *anamel[8]) {
++  int i;
++  topo_mol_cmap_t *tuple;
++  topo_mol_atom_t *al[8];
++
++  if (! mol) return -1;
++  for ( i=0; i<8; ++i ) {
++    al[i] = topo_mol_get_atom_from_res(resl[i], anamel[i]);
++    if (!al[i]) return -2-2*i;
++  }
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_cmap_t));
++  if ( ! tuple ) return -20;
++  for ( i=0; i<8; ++i ) {
++    tuple->next[i] = al[i]->cmaps;
++    tuple->atom[i] = al[i];
++  }
++  for ( i=0; i<8; ++i ) {
++    /* This must be in a separate loop because atoms may be repeated. */
++    al[i]->cmaps = tuple;
++  }
++  tuple->del = 0;
++  return 0;
++}
++
++static int topo_mol_add_cmap(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_cmap_t *def) {
++  int i;
++  topo_mol_cmap_t *tuple;
++  topo_mol_atom_t *al[8];
++  topo_mol_ident_t tl[8];
++  if (! mol) return -1;
++  for ( i=0; i<8; ++i ) {
++    if ( def->resl[i] < 0 || def->resl[i] >= ntargets ) return -2-2*i;
++    tl[i] = targets[def->resl[i]];
++    tl[i].aname = def->atoml[i];
++    al[i] = topo_mol_get_atom(mol,&tl[i],def->rell[i]);
++    if ( ! al[i] ) return -3-2*i;
++  }
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_cmap_t));
++  if ( ! tuple ) return -20;
++  for ( i=0; i<8; ++i ) {
++    tuple->next[i] = al[i]->cmaps;
++    tuple->atom[i] = al[i];
++  }
++  for ( i=0; i<8; ++i ) {
++    /* This must be in a separate loop because atoms may be repeated. */
++    al[i]->cmaps = tuple;
++  }
++  tuple->del = 0;
++  return 0;
++}
++
++static void topo_mol_del_cmap(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_cmap_t *def) {
++  int i;
++  topo_mol_cmap_t *tuple;
++  topo_mol_atom_t *al[8];
++  topo_mol_ident_t tl[8];
++  if (! mol) return;
++  for ( i=0; i<8; ++i ) {
++    if ( def->resl[i] < 0 || def->resl[i] >= ntargets ) return;
++    tl[i] = targets[def->resl[i]];
++    tl[i].aname = def->atoml[i];
++    al[i] = topo_mol_get_atom(mol,&tl[i],def->rell[i]);
++    if ( ! al[i] ) return;
++  }
++  for ( tuple = al[i]->cmaps; tuple;
++		tuple = topo_mol_cmap_next(tuple,al[i]) ) {
++    int match1, match2;
++    match1 = 0;
++    for ( i=0; i<4 && (tuple->atom[i] == al[i]); ++i );
++    if ( i == 4 ) match1 = 1;
++    for ( i=0; i<4 && (tuple->atom[i] == al[4-i]); ++i );
++    if ( i == 4 ) match1 = 1;
++    match2 = 0;
++    for ( i=0; i<4 && (tuple->atom[4+i] == al[4+i]); ++i );
++    if ( i == 4 ) match2 = 1;
++    for ( i=0; i<4 && (tuple->atom[4+i] == al[8-i]); ++i );
++    if ( i == 4 ) match2 = 1;
++    if ( match1 && match2 ) tuple->del = 1;
++  }
++}
++
++
++static int add_conformation_to_residues(topo_mol *mol, 
++    const topo_mol_residue_t *res1, const char *aname1,
++    const topo_mol_residue_t *res2, const char *aname2,
++    const topo_mol_residue_t *res3, const char *aname3,
++    const topo_mol_residue_t *res4, const char *aname4, 
++    topo_defs_conformation_t *def) {
++
++  topo_mol_conformation_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  a1 = topo_mol_get_atom_from_res(res1, aname1);
++  a2 = topo_mol_get_atom_from_res(res2, aname2);
++  a3 = topo_mol_get_atom_from_res(res3, aname3);
++  a4 = topo_mol_get_atom_from_res(res4, aname4);
++  if (!a1 || !a2 || !a3 || !a4) return -1;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_conformation_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->conformations;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->conformations;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->conformations;
++  tuple->atom[2] = a3;
++  tuple->next[3] = a4->conformations;
++  tuple->atom[3] = a4;
++  tuple->del = 0;
++  tuple->improper = def->improper;
++  tuple->dist12 = def->dist12;
++  tuple->angle123 = def->angle123;
++  tuple->dihedral = def->dihedral;
++  tuple->angle234 = def->angle234;
++  tuple->dist34 = def->dist34;
++  a1->conformations = tuple;
++  a2->conformations = tuple;
++  a3->conformations = tuple;
++  a4->conformations = tuple;
++  return 0;
++}
++
++static int topo_mol_add_conformation(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_conformation_t *def) {
++  topo_mol_conformation_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return -1;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return -2;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return -3;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return -4;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( ! a2 ) return -5;
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return -6;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( ! a3 ) return -7;
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return -8;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  if ( ! a4 ) return -9;
++  tuple = memarena_alloc(mol->arena,sizeof(topo_mol_conformation_t));
++  if ( ! tuple ) return -10;
++  tuple->next[0] = a1->conformations;
++  tuple->atom[0] = a1;
++  tuple->next[1] = a2->conformations;
++  tuple->atom[1] = a2;
++  tuple->next[2] = a3->conformations;
++  tuple->atom[2] = a3;
++  tuple->next[3] = a4->conformations;
++  tuple->atom[3] = a4;
++  tuple->del = 0;
++  tuple->improper = def->improper;
++  tuple->dist12 = def->dist12;
++  tuple->angle123 = def->angle123;
++  tuple->dihedral = def->dihedral;
++  tuple->angle234 = def->angle234;
++  tuple->dist34 = def->dist34;
++  a1->conformations = tuple;
++  a2->conformations = tuple;
++  a3->conformations = tuple;
++  a4->conformations = tuple;
++  return 0;
++}
++
++static void topo_mol_del_conformation(topo_mol *mol, const topo_mol_ident_t *targets,
++				int ntargets, topo_defs_conformation_t *def) {
++  topo_mol_conformation_t *tuple;
++  topo_mol_atom_t *a1, *a2, *a3, *a4;
++  topo_mol_ident_t t1, t2, t3, t4;
++  if (! mol) return;
++  if ( def->res1 < 0 || def->res1 >= ntargets ) return;
++  t1 = targets[def->res1];
++  t1.aname = def->atom1;
++  a1 = topo_mol_get_atom(mol,&t1,def->rel1);
++  if ( ! a1 ) return;
++  if ( def->res2 < 0 || def->res2 >= ntargets ) return;
++  t2 = targets[def->res2];
++  t2.aname = def->atom2;
++  a2 = topo_mol_get_atom(mol,&t2,def->rel2);
++  if ( def->res3 < 0 || def->res3 >= ntargets ) return;
++  t3 = targets[def->res3];
++  t3.aname = def->atom3;
++  a3 = topo_mol_get_atom(mol,&t3,def->rel3);
++  if ( def->res4 < 0 || def->res4 >= ntargets ) return;
++  t4 = targets[def->res4];
++  t4.aname = def->atom4;
++  a4 = topo_mol_get_atom(mol,&t4,def->rel4);
++  for ( tuple = a1->conformations; tuple;
++		tuple = topo_mol_conformation_next(tuple,a1) ) {
++    if ( tuple->improper == def->improper
++	&&  tuple->atom[0] == a1 && tuple->atom[1] == a2
++	&& tuple->atom[2] == a3 && tuple->atom[3] == a4 ) tuple->del = 1;
++    if ( tuple->improper == def->improper
++	&& tuple->atom[0] == a4 && tuple->atom[1] == a3
++	&& tuple->atom[2] == a2 && tuple->atom[3] == a1 ) tuple->del = 1;
++  }
++}
++
++static int topo_mol_auto_angles(topo_mol *mol, topo_mol_segment_t *segp);
++static int topo_mol_auto_dihedrals(topo_mol *mol, topo_mol_segment_t *segp);
++
++int topo_mol_end(topo_mol *mol) {
++  int i,n;
++  int idef;
++  topo_defs *defs;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_defs_residue_t *resdef;
++  topo_defs_atom_t *atomdef;
++  topo_defs_bond_t *bonddef;
++  topo_defs_angle_t *angldef;
++  topo_defs_dihedral_t *dihedef;
++  topo_defs_improper_t *imprdef;
++  topo_defs_cmap_t *cmapdef;
++  topo_defs_conformation_t *confdef;
++  topo_mol_ident_t target;
++  char errmsg[128];
++  int firstdefault=0, lastdefault=0;
++
++  if ( ! mol ) return -1;
++  if ( ! mol->buildseg ) {
++    topo_mol_log_error(mol,"no segment in progress for end");
++    return -1;
++  }
++  seg = mol->buildseg;
++  mol->buildseg = 0;
++  defs = mol->defs;
++
++  /* add atoms */
++  n = hasharray_count(seg->residue_hash);
++  for ( i=0; i<n; ++i ) {
++    res = &(seg->residue_array[i]);
++    idef = hasharray_index(defs->residue_hash,res->name);
++    if ( idef == HASHARRAY_FAIL ) {
++      sprintf(errmsg,"unknown residue type %s",res->name);
++      topo_mol_log_error(mol,errmsg);
++      return -1;
++    }
++    resdef = &(mol->defs->residue_array[idef]);
++    if ( resdef->patch ) {
++      sprintf(errmsg,"unknown residue type %s",res->name);
++      topo_mol_log_error(mol,errmsg);
++      return -1;
++    }
++
++    /* patches */
++    if ( i==0 && ! strlen(seg->pfirst) ) {
++      strcpy(seg->pfirst,resdef->pfirst);
++      firstdefault = 1;
++    }
++    if ( i==(n-1) && ! strlen(seg->plast) ) {
++      strcpy(seg->plast,resdef->plast);
++      lastdefault = 1;
++    }
++
++    for ( atomdef = resdef->atoms; atomdef; atomdef = atomdef->next ) {
++      if ( topo_mol_add_atom(mol,&(res->atoms),0,atomdef) ) { 
++        sprintf(errmsg,"add atom failed in residue %s:%s",res->name,res->resid);
++        topo_mol_log_error(mol,errmsg);
++        return -8;
++      }
++    }
++  }
++
++  for ( i=0; i<n; ++i ) {
++    res = &(seg->residue_array[i]);
++    idef = hasharray_index(defs->residue_hash,res->name);
++    if ( idef == HASHARRAY_FAIL ) {
++      sprintf(errmsg,"unknown residue type %s",res->name);
++      topo_mol_log_error(mol,errmsg);
++      return -1;
++    }
++    resdef = &(mol->defs->residue_array[idef]);
++    target.segid = seg->segid;
++    target.resid = res->resid;
++    for ( bonddef = resdef->bonds; bonddef; bonddef = bonddef->next ) {
++      int ires1, ires2;
++      if (bonddef->res1 != 0 || bonddef->res2 != 0) {
++        /* 
++         * XXX This should be caught much earlier, like when the topology
++         * file is initially read in. 
++         */
++        sprintf(errmsg, "ERROR: Bad bond definition %s %s-%s; skipping.",
++            res->name, bonddef->atom1, bonddef->atom2);
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      ires1=bonddef->rel1+i;
++      ires2=bonddef->rel2+i;
++      if (ires1 < 0 || ires2 < 0 || ires1 >= n || ires2 >= n) {
++        sprintf(errmsg, "Info: skipping bond %s-%s at %s of segment.", 
++            bonddef->atom1, bonddef->atom2, i==0 ? "beginning" : "end");
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      if (add_bond_to_residues(mol, 
++            &(seg->residue_array[ires1]), bonddef->atom1,
++            &(seg->residue_array[ires2]), bonddef->atom2)) {
++        sprintf(errmsg, 
++            "ERROR: Missing atoms for bond %s(%d) %s(%d) in residue %s:%s",
++            bonddef->atom1,bonddef->rel1,bonddef->atom2,bonddef->rel2,
++            res->name,res->resid);
++        topo_mol_log_error(mol, errmsg);
++      }
++    }
++    if ( seg->auto_angles && resdef->angles ) {
++      sprintf(errmsg,"Warning: explicit angles in residue %s:%s will be deleted during autogeneration",res->name,res->resid);
++      topo_mol_log_error(mol,errmsg);
++    }
++    for ( angldef = resdef->angles; angldef; angldef = angldef->next ) {
++      if ( topo_mol_add_angle(mol,&target,1,angldef) ) {
++        sprintf(errmsg,"Warning: add angle failed in residue %s:%s",res->name,res->resid);
++        topo_mol_log_error(mol,errmsg);
++      }
++    }
++    if ( seg->auto_dihedrals && resdef->dihedrals) {
++      sprintf(errmsg,"Warning: explicit dihedrals in residue %s:%s will be deleted during autogeneration",res->name,res->resid);
++      topo_mol_log_error(mol,errmsg);
++    }
++    for ( dihedef = resdef->dihedrals; dihedef; dihedef = dihedef->next ) {
++      if ( topo_mol_add_dihedral(mol,&target,1,dihedef) ) {
++        sprintf(errmsg,"Warning: add dihedral failed in residue %s:%s",res->name,res->resid);
++        topo_mol_log_error(mol,errmsg);
++      }
++    }
++    for ( imprdef = resdef->impropers; imprdef; imprdef = imprdef->next ) {
++      int ires1, ires2, ires3, ires4;
++      if (imprdef->res1 != 0 || imprdef->res2 != 0 || imprdef->res3 != 0 ||
++          imprdef->res4 != 0) {
++        sprintf(errmsg, "ERROR: Bad improper definition %s %s-%s-%s-%s; skipping.",
++            res->name, imprdef->atom1, imprdef->atom2, imprdef->atom3, 
++            imprdef->atom4);
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      ires1=imprdef->rel1+i;
++      ires2=imprdef->rel2+i;
++      ires3=imprdef->rel3+i;
++      ires4=imprdef->rel4+i;
++      if (ires1 < 0 || ires2 < 0 || ires3 < 0 || ires4 < 0 ||
++          ires1 >= n || ires2 >= n || ires3 >= n || ires4 >= n) {
++        sprintf(errmsg,"Info: skipping improper %s-%s-%s-%s at %s of segment.", 
++            imprdef->atom1, imprdef->atom2, imprdef->atom3, imprdef->atom4,
++            i==0 ? "beginning" : "end");
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      if (add_improper_to_residues(mol, 
++            &(seg->residue_array[ires1]), imprdef->atom1,
++            &(seg->residue_array[ires2]), imprdef->atom2,
++            &(seg->residue_array[ires3]), imprdef->atom3,
++            &(seg->residue_array[ires4]), imprdef->atom4)) {
++        sprintf(errmsg, 
++            "ERROR: Missing atoms for improper %s(%d) %s(%d) %s(%d) %s(%d)\n\tin residue %s:%s",
++            imprdef->atom1,imprdef->rel1,imprdef->atom2,imprdef->rel2,
++            imprdef->atom3,imprdef->rel3,imprdef->atom4,imprdef->rel4,
++            res->name,res->resid);
++        topo_mol_log_error(mol, errmsg);
++      }
++    }
++    for ( cmapdef = resdef->cmaps; cmapdef; cmapdef = cmapdef->next ) {
++      int j, iresl[8];
++      const topo_mol_residue_t *resl[8];
++      const char *atoml[8];
++      for ( j=0; j<8 && (cmapdef->resl[j] == 0); ++j );
++      if ( j != 8 ) {
++        sprintf(errmsg, "ERROR: Bad cross-term definition %s %s-%s-%s-%s-%s-%s-%s-%s; skipping.",
++            res->name, cmapdef->atoml[0], cmapdef->atoml[1],
++            cmapdef->atoml[2], cmapdef->atoml[3], cmapdef->atoml[4],
++            cmapdef->atoml[5], cmapdef->atoml[6], cmapdef->atoml[7]);
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      for ( j=0; j<8; ++j ) {
++        iresl[j] = cmapdef->rell[j]+i;
++      }
++      for ( j=0; j<8 && (iresl[j] >= 0) && (iresl[j] < n); ++j );
++      if ( j != 8 ) {
++        sprintf(errmsg,"Info: skipping cross-term %s-%s-%s-%s-%s-%s-%s-%s at %s of segment.", 
++            cmapdef->atoml[0], cmapdef->atoml[1],
++            cmapdef->atoml[2], cmapdef->atoml[3], cmapdef->atoml[4],
++            cmapdef->atoml[5], cmapdef->atoml[6], cmapdef->atoml[7],
++            i==0 ? "beginning" : "end");
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      for ( j=0; j<8; ++j ) {
++        resl[j] = &seg->residue_array[iresl[j]];
++        atoml[j] = cmapdef->atoml[j];
++      }
++      if (add_cmap_to_residues(mol, resl, atoml) ) {
++        sprintf(errmsg, 
++            "ERROR: Missing atoms for cross-term  %s(%d) %s(%d) %s(%d) %s(%d) %s(%d) %s(%d) %s(%d) %s(%d)\n\tin residue %s:%s",
++            cmapdef->atoml[0],cmapdef->rell[0],
++            cmapdef->atoml[1],cmapdef->rell[1],
++            cmapdef->atoml[2],cmapdef->rell[2],
++            cmapdef->atoml[3],cmapdef->rell[3],
++            cmapdef->atoml[4],cmapdef->rell[4],
++            cmapdef->atoml[5],cmapdef->rell[5],
++            cmapdef->atoml[6],cmapdef->rell[6],
++            cmapdef->atoml[7],cmapdef->rell[7],
++            res->name,res->resid);
++        topo_mol_log_error(mol, errmsg);
++      }
++    }
++    for ( confdef = resdef->conformations; confdef; confdef = confdef->next ) {
++      int ires1, ires2, ires3, ires4;
++      if (confdef->res1 != 0 || confdef->res2 != 0 || confdef->res3 != 0 ||
++          confdef->res4 != 0) {
++        sprintf(errmsg, "ERROR: Bad conformation definition %s %s-%s-%s-%s; skipping.",
++            res->name, confdef->atom1, confdef->atom2, confdef->atom3, 
++            confdef->atom4);
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      ires1=confdef->rel1+i;
++      ires2=confdef->rel2+i;
++      ires3=confdef->rel3+i;
++      ires4=confdef->rel4+i;
++      if (ires1 < 0 || ires2 < 0 || ires3 < 0 || ires4 < 0 ||
++          ires1 >= n || ires2 >= n || ires3 >= n || ires4 >= n) {
++        sprintf(errmsg,"Info: skipping conformation %s-%s-%s-%s at %s of segment.", 
++            confdef->atom1, confdef->atom2, confdef->atom3, confdef->atom4,
++            i==0 ? "beginning" : "end");
++        topo_mol_log_error(mol, errmsg);
++        continue;
++      }
++      if (add_conformation_to_residues(mol, 
++            &(seg->residue_array[ires1]), confdef->atom1,
++            &(seg->residue_array[ires2]), confdef->atom2,
++            &(seg->residue_array[ires3]), confdef->atom3,
++            &(seg->residue_array[ires4]), confdef->atom4, confdef)) {
++        sprintf(errmsg, "Warning: missing atoms for conformation %s %s-%s-%s-%s; skipping.",
++            res->name, confdef->atom1, confdef->atom2, confdef->atom3, 
++            confdef->atom4);
++        topo_mol_log_error(mol, errmsg);
++      }
++    }
++  }
++
++  /* apply patches */
++
++  res = &(seg->residue_array[0]);
++  if ( ! strlen(seg->pfirst) ) strcpy(seg->pfirst,"NONE");
++
++  target.segid = seg->segid;
++  target.resid = res->resid;
++  if ( topo_mol_patch(mol, &target, 1, seg->pfirst, 1,
++	seg->auto_angles, seg->auto_dihedrals, firstdefault) ) return -10;
++
++  res = &(seg->residue_array[n-1]);
++  if ( ! strlen(seg->plast) ) strcpy(seg->plast,"NONE");
++
++  target.segid = seg->segid;
++  target.resid = res->resid;
++  if ( topo_mol_patch(mol, &target, 1, seg->plast, 0,
++	seg->auto_angles, seg->auto_dihedrals, lastdefault) ) return -11;
++
++  if (seg->auto_angles && topo_mol_auto_angles(mol, seg)) return -12;
++  if (seg->auto_dihedrals && topo_mol_auto_dihedrals(mol, seg)) return -13;
++
++  return 0;
++}
++
++int topo_mol_regenerate_angles(topo_mol *mol) {
++  int errval;
++  errval = topo_mol_auto_angles(mol,0);
++  if ( errval ) {
++    char errmsg[128];
++    sprintf(errmsg,"Error code %d",errval);
++    topo_mol_log_error(mol,errmsg);
++  }
++  return errval;
++}
++
++int topo_mol_regenerate_dihedrals(topo_mol *mol) {
++  int errval;
++  errval = topo_mol_auto_dihedrals(mol,0);
++  if ( errval ) {
++    char errmsg[128];
++    sprintf(errmsg,"Error code %d",errval);
++    topo_mol_log_error(mol,errmsg);
++  }
++  return errval;
++}
++
++static int topo_mol_auto_angles(topo_mol *mol, topo_mol_segment_t *segp) {
++  int ires, nres, iseg, nseg;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_mol_bond_t *b1, *b2;
++  topo_mol_angle_t *tuple;
++  topo_mol_atom_t *atom, *a1, *a2, *a3;
++
++  if (! mol) return -1;
++  nseg = segp ? 1 : hasharray_count(mol->segment_hash);
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = segp ? segp : mol->segment_array[iseg];
++    if ( ! seg ) continue;
++
++    nres = hasharray_count(seg->residue_hash);
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        for ( tuple = atom->angles; tuple;
++		tuple = topo_mol_angle_next(tuple,atom) ) {
++          tuple->del = 1;
++        }
++      }
++    }
++  }
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++  seg = segp ? segp : mol->segment_array[iseg];
++  if ( ! seg ) continue;
++
++  nres = hasharray_count(seg->residue_hash);
++  for ( ires=0; ires<nres; ++ires ) {
++    res = &(seg->residue_array[ires]);
++    for ( atom = res->atoms; atom; atom = atom->next ) {
++      a2 = atom;
++      for ( b1 = atom->bonds; b1; b1 = topo_mol_bond_next(b1,atom) ) {
++        if ( b1->del ) continue;
++        if ( b1->atom[0] == atom ) a1 = b1->atom[1];
++        else if ( b1->atom[1] == atom ) a1 = b1->atom[0];
++        else return -5;
++        b2 = b1;  while ( (b2 = topo_mol_bond_next(b2,atom)) ) {
++          if ( b2->del ) continue;
++          if ( b2->atom[0] == atom ) a3 = b2->atom[1];
++          else if ( b2->atom[1] == atom ) a3 = b2->atom[0];
++          else return -6;
++          tuple = memarena_alloc(mol->arena,sizeof(topo_mol_angle_t));
++          if ( ! tuple ) return -10;
++          tuple->next[0] = a1->angles;
++          tuple->atom[0] = a1;
++          tuple->next[1] = a2->angles;
++          tuple->atom[1] = a2;
++          tuple->next[2] = a3->angles;
++          tuple->atom[2] = a3;
++          tuple->del = 0;
++          a1->angles = tuple;
++          a2->angles = tuple;
++          a3->angles = tuple;
++        }
++      }
++    }
++  }
++  }
++
++  return 0;
++}
++
++static int topo_mol_auto_dihedrals(topo_mol *mol, topo_mol_segment_t *segp) {
++  int ires, nres, iseg, nseg, found, atomid;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_mol_angle_t *g1, *g2;
++  topo_mol_dihedral_t *tuple;
++  topo_mol_atom_t *atom, *a1=0, *a2=0, *a3=0, *a4=0;
++
++  if (! mol) return -1;
++  nseg = segp ? 1 : hasharray_count(mol->segment_hash);
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = segp ? segp : mol->segment_array[iseg];
++    if ( ! seg ) continue;
++
++    nres = hasharray_count(seg->residue_hash);
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        for ( tuple = atom->dihedrals; tuple;
++		tuple = topo_mol_dihedral_next(tuple,atom) ) {
++          tuple->del = 1;
++        }
++      }
++    }
++  }
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++  seg = segp ? segp : mol->segment_array[iseg];
++  if ( ! seg ) continue;
++
++  /*  number atoms, needed to avoid duplicate dihedrals below  */
++  atomid = 0;
++  nres = hasharray_count(seg->residue_hash);
++  for ( ires=0; ires<nres; ++ires ) {
++    res = &(seg->residue_array[ires]);
++    for ( atom = res->atoms; atom; atom = atom->next ) {
++      atom->atomid = ++atomid;
++    }
++  }
++  }
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++  seg = segp ? segp : mol->segment_array[iseg];
++  if ( ! seg ) continue;
++
++  nres = hasharray_count(seg->residue_hash);
++  for ( ires=0; ires<nres; ++ires ) {
++    res = &(seg->residue_array[ires]);
++    for ( atom = res->atoms; atom; atom = atom->next ) {
++      for ( g1 = atom->angles; g1; g1 = topo_mol_angle_next(g1,atom) ) {
++        if ( g1->del ) continue;
++        if ( g1->atom[1] != atom ) continue;
++        for ( g2 = atom->angles; g2; g2 = topo_mol_angle_next(g2,atom) ) {
++          if ( g2->del ) continue;
++          if ( g2->atom[1] == atom ) continue;
++          found = 0;
++          if ( g2->atom[0] == atom ) {  /*  XBX BXX  */
++            if ( g2->atom[1] == g1->atom[0] ) {  /*  CBA BCD  */
++              a1 = g1->atom[2];
++              a2 = g1->atom[1];  /* == g2->atom[0] */
++              a3 = g1->atom[0];  /* == g2->atom[1] */
++              a4 = g2->atom[2];
++              found = ( a1->atomid < a4->atomid );
++            } else if ( g2->atom[1] == g1->atom[2] ) {  /*  ABC BCD  */
++              a1 = g1->atom[0];
++              a2 = g1->atom[1];  /* == g2->atom[0] */
++              a3 = g1->atom[2];  /* == g2->atom[1] */
++              a4 = g2->atom[2];
++              found = ( a1->atomid < a4->atomid );
++            }
++          } else if ( g2->atom[2] == atom ) {  /*  XBX XXB  */
++            if ( g2->atom[1] == g1->atom[0] ) {  /*  CBA DCB  */
++              a1 = g1->atom[2];
++              a2 = g1->atom[1];  /* == g2->atom[2] */
++              a3 = g1->atom[0];  /* == g2->atom[1] */
++              a4 = g2->atom[0];
++              found = ( a1->atomid < a4->atomid );
++            } else if ( g2->atom[1] == g1->atom[2] ) {  /*  ABC DCB  */
++              a1 = g1->atom[0];
++              a2 = g1->atom[1];  /* == g2->atom[2] */
++              a3 = g1->atom[2];  /* == g2->atom[1] */
++              a4 = g2->atom[0];
++              found = ( a1->atomid < a4->atomid );
++            }
++          } else return -6;
++          if ( ! found ) continue;
++          tuple = memarena_alloc(mol->arena,sizeof(topo_mol_dihedral_t));
++          if ( ! tuple ) return -10;
++          tuple->next[0] = a1->dihedrals;
++          tuple->atom[0] = a1;
++          tuple->next[1] = a2->dihedrals;
++          tuple->atom[1] = a2;
++          tuple->next[2] = a3->dihedrals;
++          tuple->atom[2] = a3;
++          tuple->next[3] = a4->dihedrals;
++          tuple->atom[3] = a4;
++          tuple->del = 0;
++          a1->dihedrals = tuple;
++          a2->dihedrals = tuple;
++          a3->dihedrals = tuple;
++          a4->dihedrals = tuple;
++        }
++      }
++    }
++  }
++  }
++
++  return 0;
++}
++
++int topo_mol_patch(topo_mol *mol, const topo_mol_ident_t *targets,
++                        int ntargets, const char *rname, int prepend,
++			int warn_angles, int warn_dihedrals, int deflt) {
++
++  int idef;
++  topo_defs_residue_t *resdef;
++  topo_defs_atom_t *atomdef;
++  topo_defs_bond_t *bonddef;
++  topo_defs_angle_t *angldef;
++  topo_defs_dihedral_t *dihedef;
++  topo_defs_improper_t *imprdef;
++  topo_defs_conformation_t *confdef;
++  topo_mol_residue_t *res;
++  char errmsg[128];
++
++  if ( ! mol ) return -1;
++  if ( mol->buildseg ) return -2;
++  if ( ! mol->defs ) return -3;
++
++  idef = hasharray_index(mol->defs->residue_hash,rname);
++  if ( idef == HASHARRAY_FAIL ) {
++    sprintf(errmsg,"unknown patch type %s",rname);
++    topo_mol_log_error(mol,errmsg);
++    return -4;
++  }
++  resdef = &(mol->defs->residue_array[idef]);
++  if ( ! resdef->patch ) {
++    sprintf(errmsg,"unknown patch type %s",rname);
++    topo_mol_log_error(mol,errmsg);
++    return -5;
++  }
++
++  for ( atomdef = resdef->atoms; atomdef; atomdef = atomdef->next ) {
++    if ( atomdef->res < 0 || atomdef->res >= ntargets ) return -6;
++    res = topo_mol_get_res(mol,&targets[atomdef->res],atomdef->rel);
++    if ( ! res ) return -7;
++    if ( atomdef->del ) topo_mol_del_atom(res,atomdef->name);
++    else if ( topo_mol_add_atom(mol,&(res->atoms),&(res->atoms),atomdef) ) {
++      sprintf(errmsg,"add atom failed in patch %s",rname);
++      topo_mol_log_error(mol,errmsg);
++      return -8;
++    }
++  }
++
++  for ( bonddef = resdef->bonds; bonddef; bonddef = bonddef->next ) {
++    if ( bonddef->del ) topo_mol_del_bond(mol,targets,ntargets,bonddef);
++    else if ( topo_mol_add_bond(mol,targets,ntargets,bonddef) ) {
++      sprintf(errmsg,"Warning: add bond failed in patch %s",rname);
++      topo_mol_log_error(mol,errmsg);
++    }
++  }
++  if ( warn_angles && resdef->angles ) {
++    sprintf(errmsg,"Warning: explicit angles in patch %s will be deleted during autogeneration",rname);
++    topo_mol_log_error(mol,errmsg);
++  }
++  for ( angldef = resdef->angles; angldef; angldef = angldef->next ) {
++    if ( angldef->del ) topo_mol_del_angle(mol,targets,ntargets,angldef);
++    else if ( topo_mol_add_angle(mol,targets,ntargets,angldef) ) {
++      sprintf(errmsg,"Warning: add angle failed in patch %s",rname);
++      topo_mol_log_error(mol,errmsg);
++    }
++  }
++  if ( warn_dihedrals && resdef->dihedrals ) {
++    sprintf(errmsg,"Warning: explicit dihedrals in patch %s will be deleted during autogeneration",rname);
++    topo_mol_log_error(mol,errmsg);
++  }
++  for ( dihedef = resdef->dihedrals; dihedef; dihedef = dihedef->next ) {
++    if ( dihedef->del ) topo_mol_del_dihedral(mol,targets,ntargets,dihedef);
++    else if ( topo_mol_add_dihedral(mol,targets,ntargets,dihedef) ) {
++      sprintf(errmsg,"Warning: add dihedral failed in patch %s",rname);
++        topo_mol_log_error(mol,errmsg);
++      }
++  }
++  for ( imprdef = resdef->impropers; imprdef; imprdef = imprdef->next ) {
++    if ( imprdef->del ) topo_mol_del_improper(mol,targets,ntargets,imprdef);
++    else if ( topo_mol_add_improper(mol,targets,ntargets,imprdef) ) {
++      sprintf(errmsg,"Warning: add improper failed in patch %s",rname);
++      topo_mol_log_error(mol,errmsg);
++    }
++  }
++  for ( confdef = resdef->conformations; confdef; confdef = confdef->next ) {
++    if ( confdef->del ) topo_mol_del_conformation(mol,targets,ntargets,confdef);
++    else if ( topo_mol_add_conformation(mol,targets,ntargets,confdef) ) {
++      sprintf(errmsg,"Warning: add conformation failed in patch %s",rname);
++      topo_mol_log_error(mol,errmsg);
++    }
++  }
++
++  if (strncasecmp(rname,"NONE",4)) {
++    int ret;
++    ret = topo_mol_add_patch(mol,rname,deflt);
++    if (ret<0) {
++      sprintf(errmsg,"Warning: Listing patch %s failed!",rname);
++      topo_mol_log_error(mol,errmsg);
++   }
++    for ( idef=0; idef<ntargets; idef++ ) {
++      printf("%s:%s ", targets[idef].segid,targets[idef].resid);
++      topo_mol_add_patchres(mol,&targets[idef]);
++    }
++    printf("\n");
++  }
++  return 0;
++}
++
++int topo_mol_multiply_atoms(topo_mol *mol, const topo_mol_ident_t *targets,
++						int ntargets, int ncopies) {
++  int ipass, natoms, iatom, icopy;
++  const topo_mol_ident_t *target;
++  int itarget;
++  topo_mol_atom_t *atom, **atoms;
++  topo_mol_residue_t *res;
++  topo_mol_segment_t *seg;
++  int nres, ires;
++
++  if (!mol) return -1;
++
++  /* Quiet compiler warnings */
++  natoms = 0; 
++  atoms = NULL;
++
++  /* two passes needed to find atoms */
++  for (ipass=0; ipass<2; ++ipass) {
++    if ( ipass ) atoms = memarena_alloc(mol->arena,
++				natoms*sizeof(topo_mol_atom_t*));
++    natoms = 0;
++    /* walk all targets */
++    for (itarget=0; itarget<ntargets; ++itarget) {
++      target = targets + itarget;
++      
++      if (!target->resid) { /* whole segment */
++        seg = topo_mol_get_seg(mol,target);
++        if ( ! seg ) return -2;
++        nres = hasharray_count(seg->residue_hash);
++        for ( ires=0; ires<nres; ++ires ) {
++          res = &(seg->residue_array[ires]);
++          for ( atom = res->atoms; atom; atom = atom->next ) {
++            if ( ipass ) atoms[natoms] = atom;
++            ++natoms;
++          }
++        }
++        continue;
++      }
++
++      if (!target->aname) { /* whole residue */
++        res = topo_mol_get_res(mol,target,0);
++        if ( ! res ) return -3;
++        for ( atom = res->atoms; atom; atom = atom->next ) {
++          if ( ipass ) atoms[natoms] = atom;
++          ++natoms;
++        }
++        continue;
++      }
++
++      /* one atom */
++      atom = topo_mol_get_atom(mol,target,0);
++      if ( ! atom ) return -4;
++      if ( ipass ) atoms[natoms] = atom;
++      ++natoms;
++    }
++  }
++  
++  /* make one copy on each pass through loop */
++  for (icopy=1; icopy<ncopies; ++icopy) {
++
++  /* copy the actual atoms */
++  for (iatom=0; iatom<natoms; ++iatom) {
++    topo_mol_atom_t *newatom;
++    atom = atoms[iatom];
++    if ( atom->copy ) {
++      topo_mol_log_error(mol,"an atom occurs twice in the selection");
++      return -20;
++    }
++    newatom = memarena_alloc(mol->arena,sizeof(topo_mol_atom_t));
++    if ( ! newatom ) return -5;
++    memcpy(newatom,atom,sizeof(topo_mol_atom_t));
++    atom->next = newatom;
++    atom->copy = newatom;
++    newatom->bonds = 0;
++    newatom->angles = 0;
++    newatom->dihedrals = 0;
++    newatom->impropers = 0;
++    newatom->cmaps = 0;
++    newatom->conformations = 0;
++  }
++
++  /* copy associated bonds, etc. */
++  for (iatom=0; iatom<natoms; ++iatom) {
++    topo_mol_atom_t *a1, *a2, *a3, *a4;
++    topo_mol_bond_t *bondtmp;
++    topo_mol_angle_t *angletmp;
++    topo_mol_dihedral_t *dihetmp;
++    topo_mol_improper_t *imprtmp;
++    topo_mol_cmap_t *cmaptmp;
++    topo_mol_conformation_t *conftmp;
++    atom = atoms[iatom];
++    for ( bondtmp = atom->bonds; bondtmp;
++		bondtmp = topo_mol_bond_next(bondtmp,atom) ) {
++      topo_mol_bond_t *tuple;
++      if ( bondtmp->del ) continue;
++      if ( bondtmp->atom[0] == atom || ( ! bondtmp->atom[0]->copy ) ) ;
++      else continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_bond_t));
++      if ( ! tuple ) return -6;
++      a1 = bondtmp->atom[0]->copy; if ( ! a1 ) a1 = bondtmp->atom[0];
++      a2 = bondtmp->atom[1]->copy; if ( ! a2 ) a2 = bondtmp->atom[1];
++      tuple->next[0] = a1->bonds;
++      tuple->atom[0] = a1;
++      tuple->next[1] = a2->bonds;
++      tuple->atom[1] = a2;
++      tuple->del = 0;
++      a1->bonds = tuple;
++      a2->bonds = tuple;
++    }
++    for ( angletmp = atom->angles; angletmp;
++		angletmp = topo_mol_angle_next(angletmp,atom) ) {
++      topo_mol_angle_t *tuple;
++      if ( angletmp->del ) continue;
++      if ( angletmp->atom[0] == atom || ( ! angletmp->atom[0]->copy
++      && ( angletmp->atom[1] == atom || ( ! angletmp->atom[1]->copy ) ) ) ) ;
++      else continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_angle_t));
++      if ( ! tuple ) return -7;
++      a1 = angletmp->atom[0]->copy; if ( ! a1 ) a1 = angletmp->atom[0];
++      a2 = angletmp->atom[1]->copy; if ( ! a2 ) a2 = angletmp->atom[1];
++      a3 = angletmp->atom[2]->copy; if ( ! a3 ) a3 = angletmp->atom[2];
++      tuple->next[0] = a1->angles;
++      tuple->atom[0] = a1;
++      tuple->next[1] = a2->angles;
++      tuple->atom[1] = a2;
++      tuple->next[2] = a3->angles;
++      tuple->atom[2] = a3;
++      tuple->del = 0;
++      a1->angles = tuple;
++      a2->angles = tuple;
++      a3->angles = tuple;
++    }
++    for ( dihetmp = atom->dihedrals; dihetmp;
++		dihetmp = topo_mol_dihedral_next(dihetmp,atom) ) {
++      topo_mol_dihedral_t *tuple;
++      if ( dihetmp->del ) continue;
++      if ( dihetmp->atom[0] == atom || ( ! dihetmp->atom[0]->copy
++      && ( dihetmp->atom[1] == atom || ( ! dihetmp->atom[1]->copy
++      && ( dihetmp->atom[2] == atom || ( ! dihetmp->atom[2]->copy ) ) ) ) ) ) ;
++      else continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_dihedral_t));
++      if ( ! tuple ) return -8;
++      a1 = dihetmp->atom[0]->copy; if ( ! a1 ) a1 = dihetmp->atom[0];
++      a2 = dihetmp->atom[1]->copy; if ( ! a2 ) a2 = dihetmp->atom[1];
++      a3 = dihetmp->atom[2]->copy; if ( ! a3 ) a3 = dihetmp->atom[2];
++      a4 = dihetmp->atom[3]->copy; if ( ! a4 ) a4 = dihetmp->atom[3];
++      tuple->next[0] = a1->dihedrals;
++      tuple->atom[0] = a1;
++      tuple->next[1] = a2->dihedrals;
++      tuple->atom[1] = a2;
++      tuple->next[2] = a3->dihedrals;
++      tuple->atom[2] = a3;
++      tuple->next[3] = a4->dihedrals;
++      tuple->atom[3] = a4;
++      tuple->del = 0;
++      a1->dihedrals = tuple;
++      a2->dihedrals = tuple;
++      a3->dihedrals = tuple;
++      a4->dihedrals = tuple;
++    }
++    for ( imprtmp = atom->impropers; imprtmp;
++		imprtmp = topo_mol_improper_next(imprtmp,atom) ) {
++      topo_mol_improper_t *tuple;
++      if ( imprtmp->del ) continue;
++      if ( imprtmp->atom[0] == atom || ( ! imprtmp->atom[0]->copy
++      && ( imprtmp->atom[1] == atom || ( ! imprtmp->atom[1]->copy
++      && ( imprtmp->atom[2] == atom || ( ! imprtmp->atom[2]->copy ) ) ) ) ) ) ;
++      else continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_improper_t));
++      if ( ! tuple ) return -9;
++      a1 = imprtmp->atom[0]->copy; if ( ! a1 ) a1 = imprtmp->atom[0];
++      a2 = imprtmp->atom[1]->copy; if ( ! a2 ) a2 = imprtmp->atom[1];
++      a3 = imprtmp->atom[2]->copy; if ( ! a3 ) a3 = imprtmp->atom[2];
++      a4 = imprtmp->atom[3]->copy; if ( ! a4 ) a4 = imprtmp->atom[3];
++      tuple->next[0] = a1->impropers;
++      tuple->atom[0] = a1;
++      tuple->next[1] = a2->impropers;
++      tuple->atom[1] = a2;
++      tuple->next[2] = a3->impropers;
++      tuple->atom[2] = a3;
++      tuple->next[3] = a4->impropers;
++      tuple->atom[3] = a4;
++      tuple->del = 0;
++      a1->impropers = tuple;
++      a2->impropers = tuple;
++      a3->impropers = tuple;
++      a4->impropers = tuple;
++    }
++    for ( cmaptmp = atom->cmaps; cmaptmp;
++		cmaptmp = topo_mol_cmap_next(cmaptmp,atom) ) {
++      topo_mol_atom_t *al[8];
++      topo_mol_cmap_t *tuple;
++      int ia, skip;
++      if ( cmaptmp->del ) continue;
++      skip = 0;
++      for ( ia = 0; ia < 8; ++ia ) {
++        if ( cmaptmp->atom[ia] == atom ) { skip = 0; break; }
++        if ( cmaptmp->atom[ia]->copy ) { skip = 1; break; }
++      }
++      if ( skip ) continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_cmap_t));
++      if ( ! tuple ) return -9;
++      for ( ia = 0; ia < 8; ++ia ) {
++        topo_mol_atom_t *ai;
++        ai = cmaptmp->atom[ia]->copy;
++        if ( ! ai ) ai = cmaptmp->atom[ia];
++        al[ia] = ai;
++        tuple->next[ia] = ai->cmaps;
++        tuple->atom[ia] = ai;
++      }
++      for ( ia = 0; ia < 8; ++ia ) {
++        /* This must be in a separate loop because atoms may be repeated. */
++        al[ia]->cmaps = tuple;
++      }
++      tuple->del = 0;
++    }
++    for ( conftmp = atom->conformations; conftmp;
++		conftmp = topo_mol_conformation_next(conftmp,atom) ) {
++      topo_mol_conformation_t *tuple;
++      if ( conftmp->del ) continue;
++      if ( conftmp->atom[0] == atom || ( ! conftmp->atom[0]->copy
++      && ( conftmp->atom[1] == atom || ( ! conftmp->atom[1]->copy
++      && ( conftmp->atom[2] == atom || ( ! conftmp->atom[2]->copy ) ) ) ) ) ) ;
++      else continue;
++      tuple = memarena_alloc(mol->arena,sizeof(topo_mol_conformation_t));
++      if ( ! tuple ) return -10;
++      a1 = conftmp->atom[0]->copy; if ( ! a1 ) a1 = conftmp->atom[0];
++      a2 = conftmp->atom[1]->copy; if ( ! a2 ) a2 = conftmp->atom[1];
++      a3 = conftmp->atom[2]->copy; if ( ! a3 ) a3 = conftmp->atom[2];
++      a4 = conftmp->atom[3]->copy; if ( ! a4 ) a4 = conftmp->atom[3];
++      tuple->next[0] = a1->conformations;
++      tuple->atom[0] = a1;
++      tuple->next[1] = a2->conformations;
++      tuple->atom[1] = a2;
++      tuple->next[2] = a3->conformations;
++      tuple->atom[2] = a3;
++      tuple->next[3] = a4->conformations;
++      tuple->atom[3] = a4;
++      tuple->del = 0;
++      tuple->improper = conftmp->improper;
++      tuple->dist12 = conftmp->dist12;
++      tuple->angle123 = conftmp->angle123;
++      tuple->dihedral = conftmp->dihedral;
++      tuple->angle234 = conftmp->angle234;
++      tuple->dist34 = conftmp->dist34;
++      a1->conformations = tuple;
++      a2->conformations = tuple;
++      a3->conformations = tuple;
++      a4->conformations = tuple;
++    }
++  }
++
++  /* clean up copy pointers */
++  for (iatom=0; iatom<natoms; ++iatom) {
++    atom = atoms[iatom];
++    if ( atom->partition == 0 ) atom->partition = 1;
++    atom->copy->partition = atom->partition + 1;
++    atoms[iatom] = atom->copy;
++    atom->copy = 0;
++  }
++
++  } /* icopy */
++
++  return 0;  /* success */
++}
++
++/* API function */
++void topo_mol_delete_atom(topo_mol *mol, const topo_mol_ident_t *target) {
++  
++  topo_mol_residue_t *res;
++  topo_mol_segment_t *seg;
++  int ires, iseg;
++  if (!mol) return;
++
++  iseg = hasharray_index(mol->segment_hash,target->segid);
++  if ( iseg == HASHARRAY_FAIL ) {
++    char errmsg[50];
++    sprintf(errmsg,"no segment %s",target->segid);
++    topo_mol_log_error(mol,errmsg);
++    return;
++  }
++  seg = mol->segment_array[iseg];
++  
++  if (!target->resid) {
++    /* Delete this segment */
++    int nres = hasharray_count(seg->residue_hash);
++    for ( ires=0; ires<nres; ++ires ) {
++      topo_mol_atom_t *atom;
++      res = &(seg->residue_array[ires]);
++      atom = res->atoms;
++      while (atom) {
++        topo_mol_destroy_atom(atom);
++        atom = atom->next;
++      }
++      res->atoms = 0;
++    }
++    hasharray_destroy(seg->residue_hash);
++    mol->segment_array[iseg] = 0;
++    if (hasharray_delete(mol->segment_hash, target->segid) < 0) {
++      topo_mol_log_error(mol, "Unable to delete segment");
++    }
++    return;
++  }
++
++  ires = hasharray_index(seg->residue_hash,target->resid);
++  if ( ires == HASHARRAY_FAIL ) {
++    char errmsg[50];
++    sprintf(errmsg,"no residue %s of segment %s",
++                                        target->resid,target->segid);
++    topo_mol_log_error(mol,errmsg);
++    return;
++  }
++  res = seg->residue_array+ires;  
++  
++  if (!target->aname) {  
++    /* Must destroy all atoms in residue, since there may be bonds between
++       this residue and other atoms 
++    */
++    topo_mol_atom_t *atom = res->atoms;
++    while (atom) {
++      topo_mol_destroy_atom(atom);
++      atom = atom->next;
++    }
++    res->atoms = 0;
++    hasharray_delete(seg->residue_hash, target->resid); 
++    return;
++  }
++  /* Just delete one atom */
++  topo_mol_destroy_atom(topo_mol_unlink_atom(&(res->atoms),target->aname));
++}
++
++int topo_mol_set_element(topo_mol *mol, const topo_mol_ident_t *target,
++                                        const char *element, int replace) {
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom;
++  if ( ! mol ) return -1;
++  if ( ! target ) return -2;
++  res = topo_mol_get_res(mol,target,0);
++  if ( ! res ) return -3;
++  for ( atom = res->atoms; atom; atom = atom->next ) {
++    if ( ! strcmp(target->aname,atom->name) ) break;
++  }
++  if ( ! atom ) return -3;
++
++  if ( replace || ! strlen(atom->element) ) {
++    strcpy(atom->element,element);
++  }
++  return 0;
++}
++
++int topo_mol_set_chain(topo_mol *mol, const topo_mol_ident_t *target,
++                                        const char *chain, int replace) {
++  topo_mol_residue_t *res;
++  if ( ! mol ) return -1;
++  if ( ! target ) return -2;
++  res = topo_mol_get_res(mol,target,0);
++  if ( ! res ) return -3;
++
++  if ( replace || ! strlen(res->chain) ) {
++    strcpy(res->chain,chain);
++  }
++  return 0;
++}
++
++int topo_mol_set_xyz(topo_mol *mol, const topo_mol_ident_t *target,
++                                        double x, double y, double z) {
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom;
++  if ( ! mol ) return -1;
++  if ( ! target ) return -2;
++  res = topo_mol_get_res(mol,target,0);
++  if ( ! res ) return -3;
++  for ( atom = res->atoms; atom; atom = atom->next ) {
++    if ( ! strcmp(target->aname,atom->name) ) break;
++  }
++  if ( ! atom ) return -3;
++
++  atom->x = x;
++  atom->y = y;
++  atom->z = z;
++  atom->xyz_state = TOPO_MOL_XYZ_SET;
++  return 0;
++}
++
++/* XXX Unused */
++int topo_mol_clear_xyz(topo_mol *mol, const topo_mol_ident_t *target) {
++  topo_mol_atom_t *atom;
++  if ( ! mol ) return -1;
++  if ( ! target ) return -2;
++
++  atom = topo_mol_get_atom(mol,target,0);
++  if ( ! atom ) return -3;
++
++  atom->x = 0;
++  atom->y = 0;
++  atom->z = 0;
++  atom->xyz_state = TOPO_MOL_XYZ_VOID;
++
++  return 0;
++}
++
++
++int topo_mol_guess_xyz(topo_mol *mol) {
++  char msg[128];
++  int iseg,nseg,ires,nres,ucount,i,nk,nu,gcount,gwild,okwild,wcount,hcount;
++  int ipass;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom, *a1, *a2, *a3;
++  topo_mol_atom_t *ka[4];
++  topo_mol_atom_t *ua[4];
++  topo_mol_bond_t *bondtmp;
++  topo_mol_angle_t *angletmp;
++  double dihedral, angle234, dist34;
++  topo_mol_atom_t **uatoms;
++  topo_mol_conformation_t *conf;
++  double r12x,r12y,r12z,r12,r23x,r23y,r23z,r23,ix,iy,iz,jx,jy,jz,kx,ky,kz;
++  double tx,ty,tz,a,b,c;
++
++  if ( ! mol ) return -1;
++
++  ucount = 0;
++  hcount = 0;
++  nseg = hasharray_count(mol->segment_hash);
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = mol->segment_array[iseg];
++    if (! seg) continue;
++    nres = hasharray_count(seg->residue_hash);
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        if ( atom->xyz_state != TOPO_MOL_XYZ_SET ) {
++          ++ucount;
++          if ( atom->mass > 2.5 ) ++hcount;
++        }
++      }
++    }
++  }
++  sprintf(msg,"Info: guessing coordinates for %d atoms (%d non-hydrogen)",
++						ucount, hcount);
++  topo_mol_log_error(mol,msg);
++
++  uatoms = (topo_mol_atom_t**) malloc(ucount*sizeof(topo_mol_atom_t*));
++  if ( ! uatoms ) return -2;
++  ucount = 0;
++  nseg = hasharray_count(mol->segment_hash);
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = mol->segment_array[iseg];
++    if (! seg) continue;
++    nres = hasharray_count(seg->residue_hash);
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        if ( atom->xyz_state != TOPO_MOL_XYZ_SET ) uatoms[ucount++] = atom;
++      }
++    }
++  }
++
++  for ( i=0; i<ucount; ++i ) uatoms[i]->xyz_state = TOPO_MOL_XYZ_VOID;
++
++  /* everything below based on atom 4 unknown, all others known */
++
++  /* from the CHARMM docs:
++
++    Normal IC table entry:
++                I
++                 \
++                  \
++                   J----K
++                         \
++                          \
++                           L
++        values (Rij),(Tijk),(Pijkl),(Tjkl),(Rkl)
++
++    Improper type of IC table entry:
++                I        L
++                 \     /
++                  \   /
++                   *K
++                   |
++                   |
++                   J
++        values (Rik),(Tikj),(Pijkl),T(jkl),(Rkl)
++
++  */
++
++#ifndef M_PI
++#define M_PI            3.14159265358979323846
++#endif
++
++  gcount = 1;
++  okwild = 0;
++  wcount = 0;
++  hcount = 0;
++  while ( gcount || ! okwild ) {
++   if ( gcount == 0 ) { if ( okwild ) break; else okwild = 1; }
++   gcount = 0;
++   for ( i=0; i<ucount; ++i ) { atom = uatoms[i];
++    if ( atom->xyz_state != TOPO_MOL_XYZ_VOID ) continue;
++    for ( conf = atom->conformations; conf;
++		conf = topo_mol_conformation_next(conf,atom) ) {
++      if ( conf->del ) continue;
++      else if ( conf->atom[0] == atom &&
++		conf->atom[1]->xyz_state != TOPO_MOL_XYZ_VOID &&
++		conf->atom[2]->xyz_state != TOPO_MOL_XYZ_VOID &&
++		conf->atom[3]->xyz_state != TOPO_MOL_XYZ_VOID ) {
++        if ( conf->improper ) {
++          a1 = conf->atom[3]; a2 = conf->atom[1]; a3 = conf->atom[2];
++          dist34 = conf->dist12;
++          angle234 = conf->angle123 * (M_PI/180.0);
++          dihedral = -1.0 * conf->dihedral * (M_PI/180.0);
++        } else {
++          a1 = conf->atom[3]; a2 = conf->atom[2]; a3 = conf->atom[1];
++          dist34 = conf->dist12;
++          angle234 = conf->angle123 * (M_PI/180.0);
++          dihedral = conf->dihedral * (M_PI/180.0);
++        } 
++      } 
++      else if ( conf->atom[3] == atom &&
++		conf->atom[2]->xyz_state != TOPO_MOL_XYZ_VOID &&
++		conf->atom[1]->xyz_state != TOPO_MOL_XYZ_VOID &&
++		conf->atom[0]->xyz_state != TOPO_MOL_XYZ_VOID ) {
++        if ( conf->improper ) {
++          a1 = conf->atom[0]; a2 = conf->atom[1]; a3 = conf->atom[2];
++          dist34 = conf->dist34;
++          angle234 = conf->angle234 * (M_PI/180.0);
++          dihedral = conf->dihedral * (M_PI/180.0);
++        } else {
++          a1 = conf->atom[0]; a2 = conf->atom[1]; a3 = conf->atom[2];
++          dist34 = conf->dist34;
++          angle234 = conf->angle234 * (M_PI/180.0);
++          dihedral = conf->dihedral * (M_PI/180.0);
++        } 
++      } 
++      else continue;
++
++      gwild = 0;
++      if ( dist34 == 0.0 ) { dist34 = 1.0; gwild = 1; }
++      if ( angle234 == 0.0 ) { angle234 = 109.0*M_PI/180.0; gwild = 1; }
++
++      r12x = a2->x - a1->x;
++      r12y = a2->y - a1->y;
++      r12z = a2->z - a1->z;
++      r23x = a3->x - a2->x;
++      r23y = a3->y - a2->y;
++      r23z = a3->z - a2->z;
++      a = sqrt(r23x*r23x + r23y*r23y + r23z*r23z);
++      if ( a == 0.0 ) gwild = 1; else a = 1.0 / a;
++      ix = a * r23x;
++      iy = a * r23y;
++      iz = a * r23z;
++      tx = r12y*r23z - r12z*r23y;
++      ty = r12z*r23x - r12x*r23z;
++      tz = r12x*r23y - r12y*r23x;
++      a = sqrt(tx*tx + ty*ty + tz*tz);
++      if ( a == 0.0 ) gwild = 1; else a = 1.0 / a;
++      kx = a * tx;
++      ky = a * ty;
++      kz = a * tz;
++      tx = ky*iz - kz*iy;
++      ty = kz*ix - kx*iz;
++      tz = kx*iy - ky*ix;
++      a = sqrt(tx*tx + ty*ty + tz*tz);
++      if ( a == 0.0 ) gwild = 1; else a = 1.0 / a;
++      jx = a * tx;
++      jy = a * ty;
++      jz = a * tz;
++      a = -1.0 * dist34 * cos(angle234);
++      b = dist34 * sin(angle234) * cos(dihedral);
++      c = dist34 * sin(angle234) * sin(dihedral);
++
++      if ( gwild && ! okwild ) continue;
++      if ( okwild ) {
++        ++wcount;
++        if ( atom->mass > 2.5 ) ++hcount;
++      }
++
++      atom->x = a3->x + a * ix + b * jx + c * kx;
++      atom->y = a3->y + a * iy + b * jy + c * ky;
++      atom->z = a3->z + a * iz + b * jz + c * kz;
++      atom->xyz_state = okwild ? TOPO_MOL_XYZ_BADGUESS : TOPO_MOL_XYZ_GUESS; 
++      ++gcount;
++      break;  /* don't re-guess this atom */
++    }
++   }
++  }
++
++  /* look for bad angles due to swapped atom names */
++  for ( i=0; i<ucount; ++i ) { atom = uatoms[i];
++    /* only look for errors in guessed atoms */
++    if ( atom->xyz_state == TOPO_MOL_XYZ_VOID ||
++         atom->xyz_state == TOPO_MOL_XYZ_SET ) continue;
++
++    for ( angletmp = atom->angles; angletmp;
++		angletmp = topo_mol_angle_next(angletmp,atom) ) {
++      if ( angletmp->del ) continue;
++      if ( angletmp->atom[0] == atom ) {
++        a1 = angletmp->atom[2];
++        a2 = angletmp->atom[1];
++      } else if ( angletmp->atom[2] == atom ) {
++        a1 = angletmp->atom[0];
++        a2 = angletmp->atom[1];
++      } else continue;
++      /* only use set atoms, don't hid topology file errors */
++      if ( a1->xyz_state != TOPO_MOL_XYZ_SET ) continue;
++      if ( a2->xyz_state != TOPO_MOL_XYZ_SET ) continue;
++
++      r12x = a2->x - a1->x;
++      r12y = a2->y - a1->y;
++      r12z = a2->z - a1->z;
++      r12 = sqrt(r12x*r12x + r12y*r12y + r12z*r12z);
++      r23x = atom->x - a2->x;
++      r23y = atom->y - a2->y;
++      r23z = atom->z - a2->z;
++      r23 = sqrt(r23x*r23x + r23y*r23y + r23z*r23z);
++      /* assume wrong if angle is less than 45 degrees */
++      if ( r12x*r23x + r12y*r23y + r12z*r23z < r12 * r23 * -0.7 ) {
++        if ( atom->xyz_state == TOPO_MOL_XYZ_BADGUESS ) {
++          --wcount;
++          if ( atom->mass > 2.5 ) --hcount;
++        }
++        --gcount;
++        atom->xyz_state = TOPO_MOL_XYZ_VOID; 
++        break;
++      }
++    }
++  }
++
++  /* fallback rules for atoms without conformation records */
++  for ( ipass=0; ipass<2; ++ipass ) {  /* don't do entire chain */
++  for ( i=0; i<ucount; ++i ) { atom = uatoms[i];
++    if ( atom->xyz_state != TOPO_MOL_XYZ_VOID ) continue;
++
++    /* pick heaviest known atom we are bonded to (to deal with water) */
++    a1 = 0;
++    for ( bondtmp = atom->bonds; bondtmp;
++		bondtmp = topo_mol_bond_next(bondtmp,atom) ) {
++      if ( bondtmp->atom[0] == atom ) a2 = bondtmp->atom[1];
++      else a2 = bondtmp->atom[0];
++      if ( a2->xyz_state == TOPO_MOL_XYZ_VOID ) continue;
++      if ( a1 == 0 || a2->mass > a1->mass ) a1 = a2;
++    }
++    if ( a1 == 0 ) continue;
++    atom = a1;
++
++    /* find all bonded atoms known and unknown coordinates */
++    nk = 0;  nu = 0;
++    for ( bondtmp = atom->bonds; bondtmp;
++		bondtmp = topo_mol_bond_next(bondtmp,atom) ) {
++      if ( bondtmp->del ) continue;
++      if ( bondtmp->atom[0] == atom ) a2 = bondtmp->atom[1];
++      else a2 = bondtmp->atom[0];
++      if ( a2->xyz_state == TOPO_MOL_XYZ_VOID ) {
++        if ( nu < 4 ) ua[nu++] = a2;
++      } else {
++        if ( nk < 4 ) ka[nk++] = a2;
++      }
++    }
++
++    if ( ipass ) {  /* hydrogens only on second pass */
++      int j;
++      for ( j=0; j<nu && ua[j]->mass < 2.5; ++j );
++      if ( j != nu ) continue;
++    }
++
++    if ( nu + nk > 4 ) continue;  /* no intuition beyond this case */
++
++    if ( nk == 0 ) {  /* not bonded to any known atoms */
++      a1 = ua[0];
++      a1->x = atom->x + 1.0;
++      a1->y = atom->y;
++      a1->z = atom->z;
++      a1->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++      ++gcount;  ++wcount;
++      if ( a1->mass > 2.5 ) ++hcount;
++      continue;
++    }
++
++    if ( nk == 1 ) {  /* bonded to one known atom */
++      a1 = ka[0];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      jx = -1.0 * iy;  jy = ix;  jz = 0;
++      if ( jx*jx + jy*jy + jz*jz < 0.1 ) {
++        jx = 0;  jy = -1.0 * iz;  jz = iy;
++      }
++      a = sqrt(jx*jx+jy*jy+jz*jz);
++      if ( a ) a = 1.0 / a;  else continue;
++      jx *= a; jy *= a; jz *= a;
++      if ( nu == 1 ) {  /* one unknown atom */
++        a = cos(109.0*M_PI/180.0);
++        b = sin(109.0*M_PI/180.0);
++        a2 = ua[0];
++        a2->x = atom->x + a * ix + b * jx;
++        a2->y = atom->y + a * iy + b * jy;
++        a2->z = atom->z + a * iz + b * jz;
++        a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a2->mass > 2.5 ) ++hcount;
++      } else if ( nu == 2 ) {  /* two unknown atoms */
++        a = cos(120.0*M_PI/180.0);
++        b = sin(120.0*M_PI/180.0);
++        a1 = ua[0];
++        a2 = ua[1];
++        a1->x = atom->x + a * ix + b * jx;
++        a1->y = atom->y + a * iy + b * jy;
++        a1->z = atom->z + a * iz + b * jz;
++        a2->x = atom->x + a * ix - b * jx;
++        a2->y = atom->y + a * iy - b * jy;
++        a2->z = atom->z + a * iz - b * jz;
++        a1->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a1->mass > 2.5 ) ++hcount;
++        a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a2->mass > 2.5 ) ++hcount;
++      } else { /* three unknown atoms */
++        a1 = ua[0];
++        a2 = ua[1];
++        a3 = ua[2];
++        /* only handle this case if at least two are hydrogens */
++        if ( a1->mass > 2.5 && a2->mass > 2.5 ) continue;
++        if ( a1->mass > 2.5 && a3->mass > 2.5 ) continue;
++        if ( a2->mass > 2.5 && a3->mass > 2.5 ) continue;
++        kx = iy*jz - iz*jy;
++        ky = iz*jx - ix*jz;
++        kz = ix*jy - iy*jx;
++        a = sqrt(kx*kx+ky*ky+kz*kz);
++        if ( a ) a = 1.0 / a;  else continue;
++        kx *= a; ky *= a; kz *= a;
++        a = cos(109.0*M_PI/180.0);
++        b = sin(109.0*M_PI/180.0);
++        a1->x = atom->x + a * ix + b * jx;
++        a1->y = atom->y + a * iy + b * jy;
++        a1->z = atom->z + a * iz + b * jz;
++        c = b * sin(120.0*M_PI/180.0);
++        b *= cos(120.0*M_PI/180.0);
++        a2->x = atom->x + a * ix + b * jx + c * kx;
++        a2->y = atom->y + a * iy + b * jy + c * ky;
++        a2->z = atom->z + a * iz + b * jz + c * kz;
++        a3->x = atom->x + a * ix + b * jx - c * kx;
++        a3->y = atom->y + a * iy + b * jy - c * ky;
++        a3->z = atom->z + a * iz + b * jz - c * kz;
++        a1->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a1->mass > 2.5 ) ++hcount;
++        a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a2->mass > 2.5 ) ++hcount;
++        a3->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a3->mass > 2.5 ) ++hcount;
++      }
++      continue;
++    }
++
++    if ( nk == 2 ) {  /* bonded to two known atoms */
++      a1 = ka[0];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      jx = ix;  jy = iy;  jz = iz;
++      a1 = ka[1];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      kx = jx - ix;  ky = jy - iy;  kz = jz - iz;
++      jx += ix;  jy += iy;  jz += iz;
++      a = sqrt(jx*jx+jy*jy+jz*jz);
++      if ( a ) a = 1.0 / a;  else continue;
++      jx *= a; jy *= a; jz *= a;
++      if ( nu == 1 ) {  /* one unknown atom */
++        a2 = ua[0];
++        a2->x = atom->x - jx;
++        a2->y = atom->y - jy;
++        a2->z = atom->z - jz;
++        a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a2->mass > 2.5 ) ++hcount;
++      } else {  /* two unknown atoms */
++        a1 = ua[0];
++        a2 = ua[1];
++        /* only handle this case if both are hydrogens */
++        if ( a1->mass > 2.5 || a2->mass > 2.5 ) continue;
++        a = sqrt(kx*kx+ky*ky+kz*kz);
++        if ( a ) a = 1.0 / a;  else continue;
++        kx *= a; ky *= a; kz *= a;
++        ix = jy*kz - jz*ky;
++        iy = jz*kx - jx*kz;
++        iz = jx*ky - jy*kx;
++        a = sqrt(ix*ix+iy*iy+iz*iz);
++        if ( a ) a = 1.0 / a;  else continue;
++        ix *= a; iy *= a; iz *= a;
++        angle234 = (180.0-0.5*109.0)*M_PI/180.0;
++        a = sin(angle234);
++        b = cos(angle234);
++        a1->x = atom->x + a * ix + b * jx;
++        a1->y = atom->y + a * iy + b * jy;
++        a1->z = atom->z + a * iz + b * jz;
++        a2->x = atom->x - a * ix + b * jx;
++        a2->y = atom->y - a * iy + b * jy;
++        a2->z = atom->z - a * iz + b * jz;
++        a1->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a1->mass > 2.5 ) ++hcount;
++        a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++        ++gcount;  ++wcount;
++        if ( a2->mass > 2.5 ) ++hcount;
++      }
++      continue;
++    }
++
++    if ( nk == 3 ) {  /* bonded to three known atoms */
++      a1 = ka[0];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      jx = ix;  jy = iy;  jz = iz;
++      a1 = ka[1];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      jx += ix;  jy += iy;  jz += iz;
++      a1 = ka[2];
++      ix = a1->x - atom->x;
++      iy = a1->y - atom->y;
++      iz = a1->z - atom->z;
++      a = sqrt(ix*ix+iy*iy+iz*iz);
++      if ( a ) a = 1.0 / a;  else continue;
++      ix *= a; iy *= a; iz *= a;
++      jx += ix;  jy += iy;  jz += iz;
++      a = sqrt(jx*jx+jy*jy+jz*jz);
++      if ( a ) a = 1.0 / a;  else continue;
++      a2 = ua[0];
++      a2->x = atom->x - a * jx;
++      a2->y = atom->y - a * jy;
++      a2->z = atom->z - a * jz;
++      a2->xyz_state = TOPO_MOL_XYZ_BADGUESS;
++      ++gcount;  ++wcount;
++      if ( a2->mass > 2.5 ) ++hcount;
++      continue;
++    }
++
++  }
++  }
++
++  gcount = 0;
++  for ( i=0; i<ucount; ++i ) {
++    if ( uatoms[i]->xyz_state == TOPO_MOL_XYZ_VOID ) ++gcount;
++  }
++  if ( wcount ) {
++    sprintf(msg,"Warning: poorly guessed coordinates for %d atoms (%d non-hydrogen):", wcount, hcount);
++    topo_mol_log_error(mol,msg);
++    for ( iseg=0; iseg<nseg; ++iseg ) {
++      seg = mol->segment_array[iseg];
++      if (! seg) continue;
++      nres = hasharray_count(seg->residue_hash);
++      for ( ires=0; ires<nres; ++ires ) {
++        res = &(seg->residue_array[ires]);
++        for ( atom = res->atoms; atom; atom = atom->next ) {
++          if ( atom->xyz_state == TOPO_MOL_XYZ_BADGUESS) {
++            sprintf(msg, "Warning: poorly guessed coordinate for atom %s\t %s:%s\t  %s",
++                atom->name, res->name, res->resid, seg->segid);
++            topo_mol_log_error(mol, msg);
++          }
++        }
++      }
++    }
++  }
++  if ( gcount ) {
++    sprintf(msg,"Warning: failed to guess coordinates for %d atoms",gcount);
++    topo_mol_log_error(mol,msg);
++  }
++
++  free((void*)uatoms);
++
++  return 0;
++}
++
++
++/* Copied and modified from topo_mol_segment */
++int topo_mol_add_patch(topo_mol *mol, const char *pname, int deflt) {
++  topo_mol_patch_t **patches;
++  topo_mol_patch_t *patchtmp;
++  if ( ! mol ) return -1;
++  if ( NAMETOOLONG(pname) ) return -2;
++  patches = &(mol->patches);
++  
++  patchtmp = 0;
++  patchtmp = memarena_alloc(mol->arena,sizeof(topo_mol_patch_t));
++  if ( ! patchtmp ) return -3;
++  
++  strcpy(patchtmp->pname,pname);
++  patchtmp->patchresids = 0;
++
++  patchtmp->npres = 0;
++  patchtmp->deflt = deflt;
++  patchtmp->next = 0;
++/*    printf("add_patch %i %s;\n", mol->npatch, patchtmp->pname);   */
++
++  if (mol->npatch==0) {
++    *patches = patchtmp;
++  } else {
++    mol->curpatch->next = patchtmp;
++  }
++  mol->curpatch = patchtmp;
++
++  mol->npatch++;
++  return 0;
++}
++
++
++/* Copied and modified from topo_mol_residue */
++int topo_mol_add_patchres(topo_mol *mol, const topo_mol_ident_t *target) {
++  topo_mol_patch_t *patch;
++  topo_mol_patchres_t **patchres;
++  topo_mol_patchres_t *patchrestmp;
++  if ( ! mol ) return -1;
++  if ( NAMETOOLONG(target->segid) ) return -2;
++  if ( NAMETOOLONG(target->resid) ) return -2;
++
++  patch = mol->curpatch; 
++  patchres = &(patch->patchresids);
++  patchrestmp = 0;
++  patchrestmp = memarena_alloc(mol->arena,sizeof(topo_mol_patchres_t));
++  if ( ! patchrestmp ) return -3;
++
++  strcpy(patchrestmp->segid,target->segid);
++  strcpy(patchrestmp->resid,target->resid);
++/*   printf("add_patchres %i %s:%s;\n", patch->npres, patchrestmp->segid, patchrestmp->resid);  */
++  patch->npres++;
++  /* patchrestmp->next = *patchres;  old code builds list in reverse order */
++  patchrestmp->next = NULL;
++  while ( *patchres ) { patchres = &((*patchres)->next); }
++  *patchres = patchrestmp;
++  return 0;
++}
++
++
++/* Test the existence of segid:resid for the patch */
++int topo_mol_validate_patchres(topo_mol *mol, const char *pname, const char *segid, const char *resid) {
++  topo_mol_ident_t target;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  target.segid = segid;
++  target.resid = resid;
++  seg = topo_mol_get_seg(mol,&target);
++  if ( ! seg ) {
++    char errmsg[50];
++    sprintf(errmsg,"Segment %s not exsisting, skipping patch %s.\n",segid,pname);
++    topo_mol_log_error(mol,errmsg);
++    return 0;
++  }
++  res = topo_mol_get_res(mol,&target,0);
++  if ( ! res ) {
++    char errmsg[50];
++    sprintf(errmsg,"Residue %s:%s not exsisting, skipping patch %s.\n",segid,resid,pname);
++    topo_mol_log_error(mol,errmsg);
++    return 0;
++  }
++  return 1;
++}
+diff -rupN NAMD_2.8_Source/psfgen/src/topo_mol_output.c NAMD_2.8_Source_mod/psfgen/src/topo_mol_output.c
+--- NAMD_2.8_Source/psfgen/src/topo_mol_output.c	2011-01-12 14:46:02.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/topo_mol_output.c	2011-08-13 01:28:12.000000000 -0400
+@@ -1,10 +1,807 @@
+ 
+ #include <string.h>
+ #include <stdlib.h>
++#include <math.h>
+ #include "topo_mol_output.h"
+ #include "topo_mol_struct.h"
+ #include "pdb_file.h"
+ 
++int* translate =0;
++
++
++int topo_mol_write_translate(topo_mol *mol, FILE *file, void *v, void (*print_msg)(void *, const char *)) {
++
++  int iseg,nseg,ires,nres,atomid;
++  int has_guessed_atoms = 0;
++  double x,y,z,o,b;
++
++  int ncgrps;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom;
++  topo_mol_bond_t *bond;
++  int nbonds;
++  topo_mol_angle_t *angl;
++  int nangls;
++  topo_mol_dihedral_t *dihe;
++  int ndihes;
++  topo_mol_improper_t *impr;
++  int nimprs;
++  topo_mol_chargegroup_t *cgrp;
++  topo_mol_cmap_t *cmap;
++	int ncmaps;
++  char buf[128];	int i;
++
++
++  if ( ! mol ) return -1;
++
++  atomid = 0;
++  nbonds = 0;
++  nangls = 0;
++  ndihes = 0;
++  nimprs = 0;
++  ncgrps = 0;
++  ncmaps = 0;
++  int nrestotal = 0;
++  nseg = hasharray_count(mol->segment_hash);
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = mol->segment_array[iseg];
++    if (! seg) continue;
++    nres = hasharray_count(seg->residue_hash);
++	nrestotal += nres;
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        atom->atomid = ++atomid;
++        for ( bond = atom->bonds; bond;
++                bond = topo_mol_bond_next(bond,atom) ) {
++          if ( bond->atom[0] == atom && ! bond->del ) {
++            ++nbonds;
++          }
++        }
++        for ( angl = atom->angles; angl;
++                angl = topo_mol_angle_next(angl,atom) ) {
++          if ( angl->atom[0] == atom && ! angl->del ) {
++            ++nangls;
++          }
++        }
++        for ( dihe = atom->dihedrals; dihe;
++                dihe = topo_mol_dihedral_next(dihe,atom) ) {
++          if ( dihe->atom[0] == atom && ! dihe->del ) {
++            ++ndihes;
++          }
++        }
++        for ( impr = atom->impropers; impr;
++                impr = topo_mol_improper_next(impr,atom) ) {
++          if ( impr->atom[0] == atom && ! impr->del ) {
++            ++nimprs;
++          }
++        }
++        for ( cgrp = atom->chargegroups; cgrp;
++                cgrp = topo_mol_chargegroup_next(cgrp,atom) ) {
++          if ( cgrp->atom == atom && ! cgrp->del ) {
++            ++ncgrps;
++          }
++        }
++
++
++        for ( cmap = atom->cmaps; cmap;
++                cmap = topo_mol_cmap_next(cmap,atom) ) {
++          if ( cmap->atom[0] == atom && ! cmap->del ) {
++            ++ncmaps;
++          }
++        }
++      }
++    }
++  }
++
++
++
++//////////
++
++
++
++
++  // create array of charge group numbers.
++  int* cgnr = (int*) malloc((atomid+1)*sizeof(int));
++  int curcgnr = 0;
++
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++    seg = mol->segment_array[iseg];
++    if (! seg) continue;
++    nres = hasharray_count(seg->residue_hash);
++
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        for ( cgrp = atom->chargegroups; cgrp; cgrp = topo_mol_chargegroup_next(cgrp,atom) ) {
++          if ( cgrp->atom == atom && ! cgrp->del ) {
++			curcgnr++;
++          }
++	     }
++        cgnr[atom->atomid]= curcgnr;	
++      }
++    }
++  }
++
++// scan all bonds and detect a special pair -> overwrite charge group number (combine)
++	for ( iseg=0; iseg<nseg; ++iseg ) {
++		seg = mol->segment_array[iseg];
++		if (! seg) continue;
++		nres = hasharray_count(seg->residue_hash);
++
++		for ( ires=0; ires<nres; ++ires ) {
++			res = &(seg->residue_array[ires]);
++			for ( atom = res->atoms; atom; atom = atom->next ) {
++				for ( bond = atom->bonds; bond; bond = topo_mol_bond_next(bond,atom) ) {
++					int bondfound=0;
++					if ( bond->atom[0] == atom && ! bond->del ) {
++						// known charge group problem:
++						if ((strcmp(res->name,"AGLC")==0) || (strcmp(res->name,"BGLC")==0)) {
++						// cellulose:
++						// PRES GB14
++						if ((strcmp(bond->atom[0]->name,"O1")==0) && (strcmp(bond->atom[1]->name,"C4")==0)) 
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"C4")==0) && (strcmp(bond->atom[1]->name,"O1")==0))
++							bondfound = 1;
++						// PRES BETA 
++						if ((strcmp(bond->atom[0]->name,"C1")==0) && (strcmp(bond->atom[1]->name,"O1")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"O1")==0) && (strcmp(bond->atom[1]->name,"C4")==0))
++							bondfound = 1;
++						} else {
++						// lignin:
++						// PRES BO4R , PRES BO4L
++						if ((strcmp(bond->atom[0]->name,"C8")==0) && (strcmp(bond->atom[1]->name,"O4")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"O4")==0) && (strcmp(bond->atom[1]->name,"C8")==0))
++							bondfound = 1;
++						// PRES  55
++						if ((strcmp(bond->atom[0]->name,"C5")==0) && (strcmp(bond->atom[1]->name,"C5")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"C5")==0) && (strcmp(bond->atom[1]->name,"C5")==0))
++							bondfound = 1;
++						// PRES AO4R , PRES AO4L
++						if ((strcmp(bond->atom[0]->name,"C7")==0) && (strcmp(bond->atom[1]->name,"O4")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"O4")==0) && (strcmp(bond->atom[1]->name,"C7")==0))
++							bondfound = 1;
++						// PRES B5R, B5L
++						if ((strcmp(bond->atom[0]->name,"C7")==0) && (strcmp(bond->atom[1]->name,"O4")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"O4")==0) && (strcmp(bond->atom[1]->name,"C7")==0))
++							bondfound = 1;
++						// PRES B5R, B5L
++						if ((strcmp(bond->atom[0]->name,"C8")==0) && (strcmp(bond->atom[1]->name,"C8")==0))
++							bondfound = 1;
++						if ((strcmp(bond->atom[0]->name,"C5")==0) && (strcmp(bond->atom[1]->name,"C5")==0))
++							bondfound = 1;
++						}
++						// now do the work:
++						if (bondfound==0) continue;
++
++						int cgnr_from=cgnr[bond->atom[0]->atomid];
++						int cgnr_to=cgnr[bond->atom[1]->atomid];
++						if (cgnr_from>cgnr_to) {
++							for (i=0;i<atomid;i++) { if (cgnr[i+1]==cgnr_from) cgnr[i+1]=cgnr_to; }			
++						} else {
++							for (i=0;i<atomid;i++) { if (cgnr[i+1]==cgnr_to) cgnr[i+1]=cgnr_from; }			
++						}
++	//		        fprintf (file,"%5d %5d %5d \n",bond->atom[0]->atomid,bond->atom[1]->atomid,1);
++					}
++				}
++			}
++		}
++	}
++
++
++
++	// test for non-neutral charge groups
++	int maxcgnr=0;
++	int distinctchargegroups=0;
++	int numcgfixes=0;
++	// set maximum charge group number;
++	for (i=0;i<atomid;i++) maxcgnr = (cgnr[i]>maxcgnr)? cgnr[i] : maxcgnr; 
++	double* qchargegroups = (double*) calloc((maxcgnr+1),sizeof(double));
++	int* cmpcg = (int*) calloc((maxcgnr+1),sizeof(int));
++
++	for ( iseg=0; iseg<nseg; ++iseg ) {
++		seg = mol->segment_array[iseg];
++		if (! seg) continue;
++		nres = hasharray_count(seg->residue_hash);
++		for ( ires=0; ires<nres; ++ires ) {
++			res = &(seg->residue_array[ires]);
++			for ( atom = res->atoms; atom; atom = atom->next ) {
++				qchargegroups[cgnr[atom->atomid]]+=atom->charge;
++			}
++		}
++	}
++	  sprintf(buf,"trying to make non-neutral charge groups neutral");
++	  print_msg(v,buf);	
++
++	for (i=0;i<maxcgnr;i++) {
++		if (fabs(qchargegroups[i]) > 4*GMX_DOUBLE_EPS) {
++		  sprintf(buf,"WARNING!!!!!!!!!!!!!!!!!!!");
++		  print_msg(v,buf);
++		  sprintf(buf,"charge group %d is not neutral: q=%f",i,qchargegroups[i]);
++		  print_msg(v,buf);
++		}
++	}
++
++	// scans the array and count distinct chargegroups. uses temp. array cmpcg
++	for ( iseg=0; iseg<nseg; ++iseg ) {
++		seg = mol->segment_array[iseg];
++		if (! seg) continue;
++		nres = hasharray_count(seg->residue_hash);
++		for ( ires=0; ires<nres; ++ires ) {
++			res = &(seg->residue_array[ires]);
++			for ( atom = res->atoms; atom; atom = atom->next ) {
++				sprintf(buf,"current charge group: %d",cgnr[atom->atomid]); print_msg(v,buf);					
++				int found =0;
++				for (i=0;i<maxcgnr;i++) {
++					if (cmpcg[i]==cgnr[atom->atomid]) found=1;				
++				}
++				if (found==0) {
++					sprintf(buf,"cmpcg[%d]=cgnr[%d]",distinctchargegroups,atom->atomid); print_msg(v,buf);
++					cmpcg[distinctchargegroups]=cgnr[atom->atomid];
++					distinctchargegroups++;
++				}
++
++				qchargegroups[cgnr[atom->atomid]]+=atom->charge;
++			}
++		}
++	}
++
++	int* translate = (int*) calloc(atomid+1,sizeof(int));
++
++	int atomcgcounter=0;
++	for (i=0;i<distinctchargegroups;i++) {	
++		if (cmpcg[i]==0) continue; // ignore "charge group 0" since this is an empty field
++		// current charge group number: cmpcg[i] 
++
++		for ( iseg=0; iseg<nseg; ++iseg ) {
++	 		seg = mol->segment_array[iseg];
++	 		if (! seg) continue;
++	 		nres = hasharray_count(seg->residue_hash);
++
++			for ( ires=0; ires<nres; ++ires ) {
++				res = &(seg->residue_array[ires]);
++				for ( atom = res->atoms; atom; atom = atom->next ) {
++					if (cmpcg[i]==cgnr[atom->atomid]) { // if atom has current charge group
++						translate[atom->atomid]=++atomcgcounter;
++					}
++					// here we will a "translate table:"
++					// translate[atom->atomid] gives the converted atomid for a sequence of atoms with a sort on charge number
++				}
++			}
++		}
++
++	}
++
++	// print translate table:
++			for ( iseg=0; iseg<nseg; ++iseg ) {
++		 		seg = mol->segment_array[iseg];
++		 		if (! seg) continue;
++		 		nres = hasharray_count(seg->residue_hash);
++
++				for ( ires=0; ires<nres; ++ires ) {
++					res = &(seg->residue_array[ires]);
++					for ( atom = res->atoms; atom; atom = atom->next ) {
++
++						sprintf(buf,"ATOMID %d -> %d (cg:%d)",atom->atomid,translate[atom->atomid],cgnr[atom->atomid]); print_msg(v,buf);
++					}
++				}
++			}
++
++
++////////
++
++
++
++
++	for (i=1;i<atomid+1;i++) {
++  		fprintf(file,"%d\t%d\n",i,translate[i]);
++	}
++
++	free(translate);
++
++  return 0;
++}
++
++
++
++
++int topo_mol_write_top(topo_mol *mol, FILE *file, void *v, void (*print_msg)(void *, const char *)) {
++
++  char buf[128];
++  int i,j;
++  int iseg,nseg,ires,nres,atomid;
++  topo_mol_segment_t *seg;
++  topo_mol_residue_t *res;
++  topo_mol_atom_t *atom;
++  topo_mol_bond_t *bond;
++  int nbonds;
++  topo_mol_angle_t *angl;
++  int nangls;
++  topo_mol_dihedral_t *dihe;
++  int ndihes;
++  topo_mol_improper_t *impr;
++  int nimprs;
++  topo_mol_chargegroup_t *cgrp;
++  int ncgrps;
++  topo_mol_cmap_t *cmap;
++  int ncmaps;
++  int numinline;
++  int npres,ipres,ntopo,itopo;
++  topo_defs_topofile_t *topo;
++  topo_mol_patch_t *patch;
++  topo_mol_patchres_t *patchres;
++  char defpatch[10];
++  fpos_t ntitle_pos, save_pos;
++  const char *ntitle_fmt;
++  int ntitle_count;
++  strcpy(defpatch,"");
++
++  if ( ! mol ) return -1;
++
++  ////////////////////////////////////////////////////////////////////////////////
++  // Gather infos about the internal representation of the topology
++  ////////////////////////////////////////////////////////////////////////////////
++
++
++  atomid = 0;
++  nbonds = 0;
++  nangls = 0;
++  ndihes = 0;
++  nimprs = 0;
++  ncgrps = 0;
++  ncmaps = 0;
++  
++  int nrestotal = 0;
++  nseg = hasharray_count(mol->segment_hash);
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++	seg = mol->segment_array[iseg];
++    if (! seg) continue;
++    nres = hasharray_count(seg->residue_hash);
++	nrestotal += nres;
++    for ( ires=0; ires<nres; ++ires ) {
++      res = &(seg->residue_array[ires]);
++      for ( atom = res->atoms; atom; atom = atom->next ) {
++        atom->atomid = ++atomid;
++        for ( bond = atom->bonds; bond;
++                bond = topo_mol_bond_next(bond,atom) ) {
++          if ( bond->atom[0] == atom && ! bond->del ) {
++            ++nbonds;
++          }
++        }
++        for ( angl = atom->angles; angl;
++                angl = topo_mol_angle_next(angl,atom) ) {
++          if ( angl->atom[0] == atom && ! angl->del ) {
++            ++nangls;
++          }
++        }
++        for ( dihe = atom->dihedrals; dihe;
++                dihe = topo_mol_dihedral_next(dihe,atom) ) {
++          if ( dihe->atom[0] == atom && ! dihe->del ) {
++            ++ndihes;
++          }
++        }
++        for ( impr = atom->impropers; impr;
++                impr = topo_mol_improper_next(impr,atom) ) {
++          if ( impr->atom[0] == atom && ! impr->del ) {
++            ++nimprs;
++          }
++        }
++        for ( cgrp = atom->chargegroups; cgrp;
++                cgrp = topo_mol_chargegroup_next(cgrp,atom) ) {
++          if ( cgrp->atom == atom && ! cgrp->del ) {
++            ++ncgrps;
++          }
++        }
++
++        for ( cmap = atom->cmaps; cmap;
++                cmap = topo_mol_cmap_next(cmap,atom) ) {
++          if ( cmap->atom[0] == atom && ! cmap->del ) {
++            ++ncmaps;
++          }
++        }
++      }
++    }
++  }
++
++  sprintf(buf,"Initital statistics of topology (internal):",atomid);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d segments",nseg);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d residues",nrestotal);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d atoms",atomid);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d bonds",nbonds);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d angles",nangls);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d dihedrals",ndihes);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d impropers",nimprs);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d chargegroups",ncgrps);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d CMAP entries",ncmaps);
++  print_msg(v,buf);
++
++
++int chargegroupiter=0;
++int segentries=0;
++int resentries=0;
++int atomentries=0;
++int pairentries=0;
++int bondentries=0;
++int angleentries=0;
++int dihedralentries=0;
++int improperentries=0;
++int cmapentries=0;
++
++
++  nseg = hasharray_count(mol->segment_hash);
++  for ( iseg=0; iseg<nseg; ++iseg ) {
++	seg = mol->segment_array[iseg];
++    if (! seg) continue;
++	segentries++;
++    nres = hasharray_count(seg->residue_hash);
++	resentries+=nres;
++	
++	char* molname = seg->segid; 
++	int nrexcl=3; // 1-3 interactions are excluded from nonbonded
++
++    fprintf(file,"[ moleculetype ]\n");
++    fprintf(file,"; %-15s %5s\n","Name","nrexcl");
++    fprintf(file,"%-15s %5d\n\n",molname?molname:"UnknownMolecule",nrexcl);
++    
++    fprintf(file,"[ atoms ]\n");
++    fprintf(file,"; %4s %10s %6s %7s%6s %6s %10s %10s %6s %10s %10s\n",
++ "nr","type","resnr","residue","atom","cgnr","charge","mass","typeB","chargeB","massB");
++
++	double qtot  = 0;
++	
++   	for ( ires=0; ires<nres; ++ires ) {
++   		res = &(seg->residue_array[ires]);
++		chargegroupiter++;
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++
++  			atomentries++;
++   			fprintf(file,"%6d %10s %6d %6s %6s %6d %10g %10g",
++				atom->atomid, // nr
++				atom->type, 
++            	ires+1,
++		    	res->name, // residue
++	    		atom->name, // atom
++				atom->atomid,	//charge group
++	    		atom->charge, // charge
++				atom->mass); // mass
++
++			qtot += (double)atom->charge;
++			if ( fabs(qtot) < 4*GMX_DOUBLE_EPS ) qtot=0;
++			fprintf(file,"   ; qtot %.4g\n",qtot);
++		}
++	}
++
++	fprintf(file,"\n");
++
++	fprintf(file,"[ bonds ]\n");
++	fprintf(file,";  ai    aj funct            c0            c1            c2            c3\n");
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++			for ( bond = atom->bonds; bond; bond = topo_mol_bond_next(bond,atom) ) {
++				if ( bond->atom[0] == atom && ! bond->del ) {
++						bondentries++;
++		        fprintf (file,"%5d %5d %5d \n",bond->atom[0]->atomid,bond->atom[1]->atomid,1);
++				}
++			}	
++		}
++	}
++
++
++	fprintf(file,"\n");
++	
++//	top_mol_bond_t* mybonds = malloc(2*nbonds*sizeof(top_mol_bond_t))
++//		
++//	/* duplicate all bonds to allow topological search */
++//	for ( iseg=0; iseg<nseg; ++iseg ) {
++//		seg = mol->segment_array[iseg];
++//			if (! seg) continue;
++//			nres = hasharray_count(seg->residue_hash);
++//			for ( ires=0; ires<nres; ++ires ) {
++//			res = &(seg->residue_array[ires]);
++//			for ( atom = res->atoms; atom; atom = atom->next ) {
++//				for ( bond = atom->bonds; bond;
++//			         bond = topo_mol_bond_next(bond,atom) ) {
++//					if ( bond->atom[0] == atom && ! bond->del ) {
++//						
++//					}
++//				}	
++//			}
++//		}
++//	}
++	
++//	fprintf(file,"[ pairs13 ]\n");
++//	fprintf(file,";  ai    aj funct            c0            c1            c2            c3\n");
++	
++	
++	
++	int duplatomid[100]; // static array to test for topological duplicates (case of cyclic rings)
++	int duplcounter=0;
++	int npairs = 0;
++//	int i;
++	
++	
++	
++	
++	// first scan all possible 1-3 pairs and store them in a temporary array
++	// this we need as excludes for 1-4 pairs, since 5-ring topologies can produce false 1-4 entries!
++	// pairs13 is array on int with length 2*(atomid+1)
++//	int pair13duplatomid[100];
++//	int pair13duplcounter=0;
++	int pair13counter=0;
++	int* pairs13 = (int*) calloc(12*(atomid+1),sizeof(int)); // just make it big enough...
++	
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++//			for (i=0;i<100;i++) pair13duplatomid[i]=-1;
++//			pair13duplcounter=0;
++		
++			topo_mol_atom_t *atom2,*atom3;
++		  	topo_mol_bond_t *bond2;				
++
++			for ( bond = atom->bonds; bond; bond = topo_mol_bond_next(bond,atom) ) {
++
++				if ( ! bond->del ) {
++				if (bond->atom[0] == atom) atom2 = bond->atom[1]; else atom2 = bond->atom[0];
++				if (atom==atom2) continue;
++
++				for ( bond2 = atom2->bonds; bond2; bond2 = topo_mol_bond_next(bond2,atom2) ) {
++					
++					if ( ! bond2->del ) {
++					if (bond2->atom[0] == atom2) atom3 = bond2->atom[1]; else atom3 = bond2->atom[0];							
++					if (atom==atom3 || atom2==atom3) continue;	
++													
++
++						if (atom->atomid<atom3->atomid) {
++//							int pair13duplcounter=0;
++//							for (i=0;i<100;i++) { 
++					//	sprintf(buf,"writing bond %d %d",bond->atom[0]->atomid,bond->atom[1]->atomid);
++//						sprintf(buf,"writing pair13 %d with atomid: %d",pair13counter,atomid);
++//						print_msg(v,buf);
++					
++								pairs13[2*pair13counter]=atom->atomid;
++								pairs13[2*pair13counter+1]=atom3->atomid;									
++								pair13counter++;								
++//							}
++//   							fprintf (file,"%5d %5d %5d \n",atom->atomid,atom3->atomid,1);
++							
++								//if (atom3->atomid==pair13duplatomid[i]) pair13duplcounter=1; }
++//							if ((pair13duplcounter==0)) { 
++				
++
++//									pair13duplatomid[pair13duplcounter++] = atom3->atomid;
++//							}	else { sprintf(buf,"WARNING. FOUND DUPLICATE FOR PAIR13"); print_msg(v,buf);}
++							}
++						}
++										
++					}		
++				}
++			}
++		}
++	}
++//	fprintf(file,"\n");
++		
++		
++	fprintf(file,"[ pairs ]\n");
++	fprintf(file,";  ai    aj funct            c0            c1            c2            c3\n");
++	
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++			for (i=0;i<100;i++) duplatomid[i]=-1;
++			duplcounter=0;
++		
++			topo_mol_atom_t *atom2,*atom3,*atom4;
++		  	topo_mol_bond_t *bond2,*bond3;				
++
++			for ( bond = atom->bonds; bond; bond = topo_mol_bond_next(bond,atom) ) {
++
++				if ( ! bond->del ) {
++				if (bond->atom[0] == atom) atom2 = bond->atom[1]; else atom2 = bond->atom[0];
++				if (atom==atom2) continue;
++
++				for ( bond2 = atom2->bonds; bond2; bond2 = topo_mol_bond_next(bond2,atom2) ) {
++					
++					if ( ! bond2->del ) {
++					if (bond2->atom[0] == atom2) atom3 = bond2->atom[1]; else atom3 = bond2->atom[0];							
++					if (atom==atom3 || atom2==atom3) continue;	
++												
++					for ( bond3 = atom3->bonds; bond3; bond3 = topo_mol_bond_next(bond3,atom3) ) {
++								
++						if ( ! bond3->del ) {
++						if (bond3->atom[0] == atom3) atom4 = bond3->atom[1]; else atom4 = bond3->atom[0];	
++						if (atom==atom4 || atom2==atom4 || atom3==atom4) continue;	
++							
++	//						fprintf(file,"third bond is  %d %d (%s,%s)\n",atom3->atomid,atom4->atomid,atom3->name,atom4->name);
++																							
++						if (atom->atomid<atom4->atomid) {
++
++							// test for appearance in pairs13. 
++							int p13found=0;
++							for (i=0;i<pair13counter;i++) {
++								if (pairs13[2*i]==atom->atomid && pairs13[2*i+1]==atom4->atomid) p13found=1;
++							}		
++							if (p13found==1) continue;	
++
++							int dupl=0;
++							for (i=0;i<100;i++) { 
++								if (atom4->atomid==duplatomid[i]) dupl=1; 
++							}
++							if ((dupl==0)) { 
++								pairentries++;
++								// translate atomid
++	       						fprintf (file,"%5d %5d %5d \n",atom->atomid,atom4->atomid,1);
++								npairs++; 
++								duplatomid[duplcounter++] = atom4->atomid;
++							}
++						}										 
++						
++						}
++					}		
++					}
++				}
++				
++				}
++			}
++		}
++	}
++
++	fprintf(file,"\n");
++	
++	fprintf(file,"[ angles ]");
++	fprintf(file,";  ai    aj    ak funct            c0            c1            c2            c3\n");
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++	        for ( angl = atom->angles; angl; angl = topo_mol_angle_next(angl,atom) ) {
++				if ( angl->atom[0] == atom && ! angl->del ) {
++					angleentries++;
++					// translate atomid					
++			    	fprintf (file,"%5d %5d %5d %5d \n",angl->atom[0]->atomid,angl->atom[1]->atomid,angl->atom[2]->atomid,5);
++	          	}
++	        }
++		}
++	}
++	
++	fprintf(file,"\n");
++	
++	fprintf(file,"[ dihedrals ]\n");
++	fprintf(file,";  ai    aj    ak    al funct            c0            c1            c2            c3            c4            c5\n");
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++        	for ( dihe = atom->dihedrals; dihe; dihe = topo_mol_dihedral_next(dihe,atom) ) {
++          		if ( dihe->atom[0] == atom && ! dihe->del ) {
++					dihedralentries++;
++					fprintf (file,"%5d %5d  %5d  %5d %5d \n",dihe->atom[0]->atomid,dihe->atom[1]->atomid,dihe->atom[2]->atomid,dihe->atom[3]->atomid,9);
++          		}
++			}
++        }				
++	}
++	fprintf(file,"; impropers (there's actually no improper section: function type 2 instead of 9(charmm, dihedral) )\n");
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++        	for ( impr = atom->impropers; impr; impr = topo_mol_improper_next(impr,atom) ) {
++          		if ( impr->atom[0] == atom && ! impr->del ) {
++					improperentries++;
++//					fprintf (file,"%5d %5d  %5d  %5d %5d \n",translate[impr->atom[0]->atomid],translate[impr->atom[1]->atomid],translate[impr->atom[2]->atomid],translate[impr->atom[3]->atomid],2);
++					fprintf (file,"%5d %5d  %5d  %5d %5d \n",impr->atom[0]->atomid,impr->atom[1]->atomid,impr->atom[2]->atomid,impr->atom[3]->atomid,2);
++          		}
++			}
++        }	
++	}
++	
++	fprintf(file,"\n");
++	
++	fprintf(file,"[ cmap ]\n");
++	fprintf(file,";  c0 c1 c2 c3 c4 c5 c6 c7\n");
++
++	for ( ires=0; ires<nres; ++ires ) {
++		res = &(seg->residue_array[ires]);
++		for ( atom = res->atoms; atom; atom = atom->next ) {
++        	for ( cmap = atom->cmaps; cmap; cmap = topo_mol_cmap_next(cmap,atom) ) {
++          		if ( cmap->atom[0] == atom && ! cmap->del ) {
++					cmapentries++;
++					fprintf (file,"%5d %5d %5d %5d %5d %5d\n",cmap->atom[0]->atomid,cmap->atom[1]->atomid,cmap->atom[2]->atomid,cmap->atom[3]->atomid,cmap->atom[7]->atomid,1);
++          		}
++			}
++        }	
++	}
++	
++	
++	} // segment loop
++			
++			
++			
++
++  sprintf(buf,"Actually written:");
++  print_msg(v,buf);
++  sprintf(buf,"total of %d segments",segentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d residues",resentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d atoms",atomentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d bonds",bondentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d angles",angleentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d dihedrals",dihedralentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d charge groups",atomentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d impropers",improperentries);
++  print_msg(v,buf);
++  sprintf(buf,"total of %d cmap entries",cmapentries);
++  print_msg(v,buf);
++	sprintf(buf,"total of %d pairs",pairentries);
++  	print_msg(v,buf);
++
++	
++	fprintf(file,"; edit the following sections as you need it:");
++	
++	fprintf(file,"; Include Position restraint file                  \n");
++	fprintf(file,"#ifdef POSRES                                      \n");
++	fprintf(file,"#include \"posre.itp\"                             \n");
++	fprintf(file,"#endif                                             \n");
++    fprintf(file,"                                                   \n");
++	fprintf(file,"; Include water topology                           \n");
++	fprintf(file,"#include \"tip3p.itp\"                             \n");
++    fprintf(file,"                                                   \n");
++	fprintf(file,"#ifdef POSRES_WATER                                \n");
++	fprintf(file,"; Position restraint for each water oxygen         \n");
++	fprintf(file,"[ position_restraints ]                            \n");
++	fprintf(file,";  i funct       fcx        fcy        fcz         \n");
++	fprintf(file,"   1    1       1000       1000       1000         \n");
++	fprintf(file,"#endif                                             \n");
++    fprintf(file,"                                                   \n");
++	fprintf(file,"; Include generic topology for ions                \n");
++	fprintf(file,"#include \"ions.itp\"                              \n");
++    fprintf(file,"                                                   \n");
++                                                                     
++	fprintf(file,"[ system ]                                         \n");
++	fprintf(file,"; Name                                             \n");
++	fprintf(file,";Protein                                           \n");
++    fprintf(file,"                                                   \n");
++                                                                     
++	fprintf(file,"[ molecules ]                                      \n");
++	fprintf(file,"; Compound        #mols                            \n");
++	fprintf(file,";define number of solvent atoms here!              \n");
++	fprintf(file,";SOL		    44722                                \n");
++	for ( iseg=0; iseg<nseg; ++iseg ) {
++		seg = mol->segment_array[iseg];
++			if (! seg) continue;
++			nres = hasharray_count(seg->residue_hash);
++			if (nres>0) {
++				fprintf(file,"%-15s\t 1\n",seg->segid);
++			}
++	}
++
++	
++
++	fprintf(file,"\n");	
++
++	return 0;
++	/* end of function here */
++
++}
+ int topo_mol_write_pdb(topo_mol *mol, FILE *file, void *v, 
+                                 void (*print_msg)(void *, const char *)) {
+ 
+diff -rupN NAMD_2.8_Source/psfgen/src/topo_mol_output.h NAMD_2.8_Source_mod/psfgen/src/topo_mol_output.h
+--- NAMD_2.8_Source/psfgen/src/topo_mol_output.h	2006-08-15 14:37:01.000000000 -0400
++++ NAMD_2.8_Source_mod/psfgen/src/topo_mol_output.h	2011-08-11 16:03:59.000000000 -0400
+@@ -11,5 +11,376 @@ int topo_mol_write_pdb(topo_mol *mol, FI
+ int topo_mol_write_psf(topo_mol *mol, FILE *file, int charmmfmt, int nocmap,
+                         void *, void (*print_msg)(void *, const char *));
+ 
++
++int topo_mol_write_translate(topo_mol *mol, FILE *file, void *, void (*print_msg)(void *, const char *));
++
++int topo_mol_write_top(topo_mol *mol, FILE *file, void *, void (*print_msg)(void *, const char *));
++
++
++// from gromacs:
++/* this MUST correspond to the 
++   t_interaction_function[F_NRE] in gmxlib/ifunc.c */
++enum {
++  F_BONDS,
++  F_G96BONDS,
++  F_MORSE,
++  F_CUBICBONDS,
++  F_CONNBONDS,
++  F_HARMONIC,
++  F_FENEBONDS,
++  F_TABBONDS,
++  F_TABBONDSNC,
++  F_ANGLES, 
++  F_G96ANGLES,
++  F_CROSS_BOND_BONDS,
++  F_CROSS_BOND_ANGLES,
++  F_UREY_BRADLEY,
++  F_QUARTIC_ANGLES,
++  F_TABANGLES,
++  F_PDIHS,
++  F_RBDIHS, 
++  F_FOURDIHS,
++  F_IDIHS, 
++  F_PIDIHS, 
++  F_TABDIHS,
++  F_LJ14,
++  F_COUL14,
++  F_LJC14_Q,
++  F_LJC_PAIRS_NB,
++  F_LJ,
++  F_BHAM,
++  F_LJ_LR,
++  F_BHAM_LR,
++  F_DISPCORR,
++  F_COUL_SR,
++  F_COUL_LR,
++  F_RF_EXCL,
++  F_COUL_RECIP,
++  F_DPD,
++  F_POLARIZATION,
++  F_WATER_POL,
++  F_THOLE_POL,
++  F_POSRES,
++  F_DISRES,
++  F_DISRESVIOL,
++  F_ORIRES,
++  F_ORIRESDEV,
++  F_ANGRES,
++  F_ANGRESZ,
++  F_DIHRES,
++  F_DIHRESVIOL,
++  F_CONSTR,
++  F_CONSTRNC,
++  F_SETTLE,
++  F_VSITE2,
++  F_VSITE3,
++  F_VSITE3FD,
++  F_VSITE3FAD,
++  F_VSITE3OUT,
++  F_VSITE4FD,
++  F_VSITE4FDN,
++  F_VSITEN,
++  F_COM_PULL,
++  F_EQM,
++  F_EPOT,
++  F_EKIN,
++  F_ETOT,
++  F_ECONSERVED,
++  F_TEMP,
++  F_PRES,
++  F_DVDL,
++  F_DKDL,
++  F_DGDL_CON,
++  F_NRE		/* This number is for the total number of energies	*/
++};
++
++
++typedef enum {
++  d_defaults,
++  d_atomtypes,
++  d_bondtypes,
++  d_constrainttypes,
++  d_pairtypes,
++  d_angletypes,
++  d_dihedraltypes,
++  d_nonbond_params,
++  d_moleculetype,
++  d_atoms,
++  d_vsites2,
++  d_vsites3,
++  d_vsites4,
++  d_vsitesn,
++  d_bonds,
++  d_exclusions,
++  d_pairs,
++  d_pairs_nb,
++  d_angles,
++  d_dihedrals,
++  d_constraints,
++  d_settles,
++  d_polarization,
++  d_water_polarization,
++  d_thole_polarization,
++  d_system,
++  d_molecules,
++  d_position_restraints,
++  d_angle_restraints,
++  d_angle_restraints_z,
++  d_distance_restraints,
++  d_orientation_restraints,
++  d_dihedral_restraints,
++  d_maxdir,
++  d_invalid,
++  d_none
++} directive;
++
++
++static char *ds[d_maxdir+1] = {
++  "defaults",
++  "atomtypes",
++  "bondtypes",
++  "constrainttypes",
++  "pairtypes",
++  "angletypes",
++  "dihedraltypes",
++  "nonbond_params",
++  /* All the directives above can not appear after moleculetype */
++  "moleculetype",
++  "atoms",
++  "virtual_sites2",
++  "virtual_sites3",
++  "virtual_sites4",
++  "virtual_sitesn",
++  "bonds",
++  "exclusions",
++  "pairs",
++  "pairs_nb",
++  "angles",
++  "dihedrals",
++  "constraints",
++  "settles",
++  "polarization",
++  "water_polarization",
++  "thole_polarization",
++  "system",
++  "molecules",
++  "position_restraints",
++  "angle_restraints",
++  "angle_restraints_z",
++  "distance_restraints",
++  "orientation_restraints",
++  "dihedral_restraints",
++  "invalid"
++  };
++
++enum { ebtsBONDS, ebtsANGLES, ebtsPDIHS, ebtsIDIHS, ebtsEXCLS, ebtsNR };
++
++///////////////////////////////////////////////////////////////
++////////////////// FOR REFERENCE: ///////////////////////////
++///////////////////////////////////////////////////////////////
++
++  /* these bonded parameters will overwritten be when  *
++   * there is a [ bondedtypes ] entry in the .rtp file */
++//  bts[0] = 1; /* normal bonds     */
++//  bts[1] = 1; /* normal angles    */
++//  bts[2] = 1; /* normal dihedrals */
++//  bts[3] = 2; /* normal impropers */
++  
++  
++  /* Column 5 & 6 aren't really bonded types, but we include
++   * them here to avoid introducing a new section:
++   * Column 5: 1 means generate all dihedrals, 0 not.
++   * Column 6: Number of bonded neighbors to exclude.
++   * Coulmn 7: Generate 1,4 interactions between pairs of hydrogens
++   * Column 8: Remove impropers over the same bond as a proper dihedral
++  */
++////////////////////////////////////////////////////////////////////////
++
++typedef struct gpp_atomtype *t_atomtype;
++
++#define PERTURBED(a) (((a).mB != (a).m) || ((a).qB != (a).q) || ((a).typeB != (a).type))
++
++	    /*! \brief Double precision accuracy */
++#define GMX_DOUBLE_EPS   1.11022302E-16
++
++	    /*! \brief Maximum double precision value */
++#define GMX_DOUBLE_MAX   1.79769313E+308
++
++	    /*! \brief Minimum double precision value */
++#define GMX_DOUBLE_MIN   2.22507386E-308
++
++	    /*! \brief Single precision accuracy */
++#define GMX_FLOAT_EPS    5.96046448E-08
++
++	    /*! \brief Maximum single precision value */
++#define GMX_FLOAT_MAX    3.40282347E+38
++
++	    /*! \brief Minimum single precision value */
++#define GMX_FLOAT_MIN    1.17549435E-38
++	
++typedef int     	atom_id;	/* To indicate an atoms id         */
++
++
++/* check kernel/toppush.c when you change these numbers */
++#define MAXATOMLIST	5
++#define MAXFORCEPARAM	12
++#define NR_RBDIHS	6
++#define NR_FOURDIHS     4
++#define MAXSLEN 32
++#define STRLEN 4096
++#define NOTSET -12345
++
++#define bool int
++
++
++typedef float real;
++
++typedef struct { 
++  real m,q;		/* Mass and charge			*/
++  real 		mB,qB;		/* Mass and charge for Free Energy calc */
++  unsigned short type;		/* Atom type				*/
++  unsigned short typeB;		/* Atom type for Free Energy calc	*/
++  int           ptype;		/* Particle type			*/
++  int 		resnr;		/* Residue number			*/
++  int           atomnumber;     /* Atomic Number or NOTSET              */
++  char name[MAXSLEN];
++  char type_name[MAXSLEN];          /* type name                     */
++  unsigned char chain;          /* chain identifier                     */
++  char segname[MAXSLEN];          /* segment name                     */
++  char resname[MAXSLEN];          /* residue name                     */
++} t_atom;
++
++typedef struct {
++  atom_id    a[MAXATOMLIST];	/* The atom list (eg. bonds: particle	*/
++				/* i = a[0] (AI), j = a[1] (AJ))	*/
++  real 	     c[MAXFORCEPARAM];	/* Force parameters (eg. b0 = c[0])	*/
++  char       s[MAXSLEN];        /* A string (instead of parameters),    *
++				 * read from the .rtp file in pdb2gmx   */
++} t_param;
++
++typedef struct {
++  int		nr;		/* The number of bonds in this record 	*/
++  t_param 	*param;		/* Array of parameters (dim: nr)	*/
++} t_params;
++
++typedef struct {
++  int  nr;			/* Number of different groups		*/
++  int  *nm_ind;                 /* Index in the group names             */
++} t_grps;
++
++
++typedef struct {
++  int  type;                    /* PDB record name                      */
++  int  atomnr;                  /* PDB atom number                      */
++  char altloc;                  /* Alternate location indicator         */
++  char atomnm[6];               /* True atom name including spaces      */
++  char pdbresnr[6];             /* PDB res number                       */
++real occup;                   /* Occupancy                            */
++  real bfac;                  /* B-factor                             */
++int bb;
++//  bool bAnisotropic;            /* (an)isotropic switch                 */
++  int  uij[6];                  /* Anisotropic B-factor                 */
++} t_pdbinfo;
++
++
++typedef struct {
++  int           nr;             /* Nr of atoms                          */
++  t_atom	*atom;		/* Array of atoms (dim: nr)		*/
++				/* The following entries will not 	*/
++				/* allways be used (nres==0)	 	*/
++  char		***atomname;	/* Array of pointers to atom name	*/
++				/* use: (*(atomname[i]))		*/
++  char		***atomtype;	/* Array of pointers to atom types	*/
++				/* use: (*(atomtype[i]))		*/
++  char		***atomtypeB;	/* Array of pointers to B atom types	*/
++				/* use: (*(atomtypeB[i]))		*/
++  int		nres;		/* Nr of residue names			*/
++  char		***resname; 	/* Array of pointers to residue names 	*/
++				/* use: (*(resname[i]))	       	*/
++  t_pdbinfo     *pdbinfo;       /* PDB Information, such as aniso. Bfac */
++} t_atoms;
++
++typedef struct {
++  int           nr;              /* number of atomtypes                     */
++  real         *radius;         /* GBSA radius for each atomtype        */
++  real         *vol;            /* GBSA efective volume for each atomtype   */
++  real         *surftens;       /* implicit solvent surftens for each atomtype */
++  int          *atomnumber;     /* Atomic number, used for QM/MM */
++} t_atomtypes;
++
++typedef struct {
++  int           nr;		/* The number of atomtypes		*/
++  t_atom	*atom;		/* Array of atoms			*/
++  char          ***atomname;	/* Names of the atomtypes		*/
++  t_param	*nb;		/* Nonbonded force default params	*/
++  int           *bondatomtype;  /* The bond_atomtype for each atomtype  */
++  real          *radius;        /* Radius for GBSA stuff                */
++  real          *vol;           /* Effective volume for GBSA            */
++  real          *surftens;      /* Surface tension with water, for GBSA */
++  int           *atomnumber;    /* Atomic number, used for QM/MM        */
++} gpp_atomtype;	
++	
++//	typedef struct symbuf {
++//	  int bufsize;
++//	  char **buf;
++//	  struct symbuf *next;
++//	} t_symbuf;
++//
++//	typedef struct
++//	{
++//	  int      nr;
++//	  t_symbuf *symbuf;
++//	} t_symtab;
++//	
++//	typedef struct
++//	{
++//	  char    *name;	/* the name of this function			*/
++//	  char    *longname;    /* The name for printing etc.                   */
++//	  int     nratoms;	/* nr of atoms needed for this function		*/
++//	  int     nrfpA,nrfpB;  /* number of parameters for this function.      */
++//	                        /* this corresponds to the number of params in  */
++//	                        /* iparams struct! (see idef.h)                 */
++//	  /* A and B are for normal and free energy components respectively.    */
++//	  unsigned long   flags;        /* Flags (see above)                            */
++//	  int     nrnb_ind;     /* index for nrnb (-1 if unknown)               */
++//	  t_ifunc *ifunc;	/* the function it self				*/
++//	} t_interaction_function;
++	
++#define NRFPA(ftype) (interaction_function[(ftype)].nrfpA)
++#define NRFPB(ftype) (interaction_function[(ftype)].nrfpB)
++#define NRFP(ftype)  (NRFPA(ftype)+NRFPB(ftype))
++#define NRAL(ftype) (interaction_function[(ftype)].nratoms)
++
++
++	
++#define snew(ptr,nelem) (ptr)=save_calloc(#ptr,__FILE__,__LINE__,\
++			(nelem),sizeof(*(ptr)))
++#define srenew(ptr,nelem) (ptr)=save_realloc(#ptr,__FILE__,__LINE__,\
++			(ptr),(nelem),sizeof(*(ptr)))
++#define smalloc(ptr,size) (ptr)=save_malloc(#ptr,__FILE__,__LINE__,size)
++#define scalloc(ptr,nelem,elsize)\
++		(ptr)=save_calloc(#ptr,__FILE__,__LINE__,nelem,elsize)
++#define srealloc(ptr,size) (ptr)=save_realloc(#ptr,__FILE__,__LINE__,\
++			(ptr),size,1)
++#define sfree(ptr) save_free(#ptr,__FILE__,__LINE__,(ptr))
++
++#ifdef CPLUSPLUS 
++extern "C" { 
++#endif
++
++void *save_malloc(char *name,char *file,int line,unsigned size); 
++void *save_calloc(char *name,char *file,int line,
++		  unsigned nelem,unsigned elsize); 
++void *save_realloc(char *name,char *file,int line,
++		   void *ptr,unsigned nelem,unsigned elsize);
++void save_free(char *name,char *file,int line, void *ptr);
++unsigned maxavail(void);
++unsigned memavail(void);
++
++#ifdef CPLUSPLUS
++}
++#endif
++
++
+ #endif
+ 
+diff -rupN NAMD_2.8_Source/psfgen/src/topo_mol_struct.h NAMD_2.8_Source_mod/psfgen/src/topo_mol_struct.h
+--- NAMD_2.8_Source/psfgen/src/topo_mol_struct.h	2009-02-06 18:13:15.000000000 -0500
++++ NAMD_2.8_Source_mod/psfgen/src/topo_mol_struct.h	2011-08-11 16:03:59.000000000 -0400
+@@ -36,6 +36,12 @@ typedef struct topo_mol_improper_t {
+   int del;
+ } topo_mol_improper_t;
+ 
++typedef struct topo_mol_chargegroup_t {
++  struct topo_mol_chargegroup_t *next;
++  struct topo_mol_atom_t *atom;
++  int del;
++} topo_mol_chargegroup_t;
++
+ typedef struct topo_mol_cmap_t {
+   struct topo_mol_cmap_t *next[8];
+   struct topo_mol_atom_t *atom[8];
+@@ -62,6 +68,7 @@ typedef struct topo_mol_atom_t {
+   topo_mol_angle_t *angles;
+   topo_mol_dihedral_t *dihedrals;
+   topo_mol_improper_t *impropers;
++  topo_mol_chargegroup_t *chargegroups; 
+   topo_mol_cmap_t *cmaps;
+   topo_mol_conformation_t *conformations;
+   char name[NAMEMAXLEN];
+@@ -139,5 +146,9 @@ topo_mol_improper_t * topo_mol_improper_
+ topo_mol_cmap_t * topo_mol_cmap_next(
+                 topo_mol_cmap_t *tuple, topo_mol_atom_t *atom);
+ 
++topo_mol_chargegroup_t * topo_mol_chargegroup_next(
++                topo_mol_chargegroup_t *tuple, topo_mol_atom_t *atom);
++
++
+ #endif
+ 
